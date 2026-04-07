@@ -53,7 +53,7 @@ def _require(name: str) -> str:
     if not val:
         raise RuntimeError(
             f"Required environment variable {name!r} is not set. "
-            f"See proposed_research_commons/README.md for the full list."
+            f"See README.md in the research_commons repo for the full list."
         )
     return val
 

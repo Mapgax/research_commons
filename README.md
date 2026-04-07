@@ -17,10 +17,10 @@ This package is the *single source of truth* for:
 ## Installation (local, editable)
 
 ```bash
-cd proposed_research_commons
+cd research_commons
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+python3 -m pip install -e ".[dev]"
 ```
 
 The other three projects then import from it:
