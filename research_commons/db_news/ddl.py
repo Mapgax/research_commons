@@ -4,6 +4,7 @@ from __future__ import annotations
 
 EXPECTED_TABLES: tuple[str, ...] = (
     "sources",
+    "source_health",
     "articles",
     "article_classifications",
     "article_companies",
@@ -18,6 +19,7 @@ EXPECTED_TABLES: tuple[str, ...] = (
 
 NATURAL_KEYS: dict[str, tuple[str, ...]] = {
     "sources":                 ("name",),
+    "source_health":           ("id",),
     "articles":                ("content_hash",),
     "article_classifications": ("article_id", "classifier_version"),
     "article_companies":       ("article_id", "ticker"),

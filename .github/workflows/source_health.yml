@@ -1,0 +1,45 @@
+name: Source Health
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  source-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEWS_DATABASE_URL: ${{ secrets.NEWS_DATABASE_URL }}
+      RC_LOG_LEVEL: INFO
+      SOURCE_HEALTH_REPORT_DIR: reports/source_health
+      SOURCE_HEALTH_TIMEOUT_SEC: "8"
+      SOURCE_HEALTH_MAX_RETRIES: "2"
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e ".[dev]"
+
+      - name: Run source health monitor
+        run: python3 -m research_commons.source_health
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-health-report
+          path: reports/source_health/
+          if-no-files-found: ignore
