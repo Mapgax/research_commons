@@ -43,6 +43,11 @@ def get_pool() -> psycopg2.pool.ThreadedConnectionPool:
         if _pool is not None:   # re-check after acquiring lock
             return _pool
         s = get_settings()
+        if not s.market_database_url:
+            raise RuntimeError(
+                "MARKET_DATABASE_URL is not set. "
+                "Only pipelines that need market_db should call this."
+            )
         logger.info("Creating market_db connection pool (min=%d max=%d)",
                     s.market_pool_min, s.market_pool_max)
         _pool = psycopg2.pool.ThreadedConnectionPool(

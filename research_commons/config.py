@@ -94,7 +94,7 @@ def get_settings() -> Settings:
     ``get_settings.cache_clear()`` before each test that needs a different env.
     """
     return Settings(
-        market_database_url=_require("MARKET_DATABASE_URL"),
+        market_database_url=os.getenv("MARKET_DATABASE_URL", ""),
         news_database_url=_require("NEWS_DATABASE_URL"),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
