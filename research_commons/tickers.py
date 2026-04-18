@@ -23,6 +23,13 @@ class TickerInfo:
     yahoo_symbol: str    # e.g. "NOVN.SW"
     sector: str | None
     currency: str        # ISO 4217, e.g. "CHF"
+    scope_status: str = "inactive"  # "active" | "inactive" | "watchlist"
+    # Default is "inactive" (not "active") so a TickerInfo constructed without
+    # an explicit scope_status never silently opts a ticker into production pipelines.
+    # Scope groups: audience routing flags (1 = included, 0 = excluded)
+    scope_pm_ch: bool = False     # Swiss PM universe
+    scope_pm_de: bool = False     # German PM universe
+    scope_advisory: bool = False  # Advisory universe
 
 
 @lru_cache(maxsize=1)
