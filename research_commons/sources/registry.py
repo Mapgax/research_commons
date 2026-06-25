@@ -1,7 +1,18 @@
 """Static metadata about the news/data sources we ingest from.
 
 Lives in code (not the DB) so it can be code-reviewed and version-controlled.
-A nightly job mirrors this dict into the DB2 ``sources`` table for FK integrity.
+``Companies_News/news_db_sync.py::ensure_known_news_sources_registered()`` and
+``investment_idea_scapper/investment_radar/scrapers/registry.py::seed_sources()``
+both upsert this dict into the DB2 ``sources`` table on each pipeline run, so
+``articles.source`` FK inserts never fail on an unregistered source name.
+
+Scope note (J15): this registry owns a small set of API/aggregator sources
+(NewsAPI, GDELT, Finnhub, EDGAR, manual, scraper) shared across all three
+repos. It is intentionally separate from
+``investment_idea_scapper/investment_radar/scrapers/registry.py``, which owns
+the 40+ web-scraper sources consumed by investment_radar's own collector
+pipeline (RSS/static-HTML/sitemap scraping). Both registries write into the
+same ``news_db.sources`` table by design.
 """
 
 from __future__ import annotations

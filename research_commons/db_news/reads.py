@@ -10,6 +10,7 @@ Frozen API surface:
     load_briefings(*, limit=10) -> pd.DataFrame
     load_documents(*, source_pipeline=None, since=None) -> pd.DataFrame
     load_pipeline_runs(pipeline_name, *, limit=20) -> pd.DataFrame
+    resolve_alias(text) -> str | None
 """
 
 from __future__ import annotations
@@ -210,3 +211,18 @@ def load_pipeline_runs(pipeline_name: str, *, limit: int = 20) -> pd.DataFrame:
             params={"pn": pipeline_name, "limit": limit},
             parse_dates=["started_at", "finished_at"],
         )
+
+
+def resolve_alias(text: str) -> str | None:
+    """Deterministic company-name -> ticker lookup against ``ticker_aliases``.
+
+    Used to supplement (not replace) LLM-based extraction — see
+    ``investment_radar/pipeline/company_mapper.py``. Matching is
+    case-insensitive on the caller-normalized ``text``.
+    """
+    sql = "SELECT ticker FROM ticker_aliases WHERE alias = %(alias)s LIMIT 1"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, {"alias": (text or "").strip().lower()})
+            row = cur.fetchone()
+            return row[0] if row else None
