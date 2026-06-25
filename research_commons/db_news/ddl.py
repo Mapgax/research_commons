@@ -26,6 +26,7 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "briefings",
     "briefing_items",
     "pipeline_runs",
+    "ticker_aliases",
 )
 
 NATURAL_KEYS: dict[str, tuple[str, ...]] = {
@@ -41,6 +42,7 @@ NATURAL_KEYS: dict[str, tuple[str, ...]] = {
     "briefings":               ("as_of", "audience"),
     "briefing_items":          ("briefing_id", "ordinal"),
     "pipeline_runs":           ("id",),
+    "ticker_aliases":          ("alias",),
 }
 
 

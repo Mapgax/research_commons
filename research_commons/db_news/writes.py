@@ -13,6 +13,7 @@ Frozen API surface:
     upsert_briefing(...) -> int
     upsert_document(...) -> int
     record_pipeline_run(...) -> int
+    upsert_ticker_alias(alias, ticker, *, source=None) -> None
 """
 
 from __future__ import annotations
@@ -172,6 +173,11 @@ def refresh_sentiment_daily(*, since: date | None = None) -> int:
 
     Uses the latest classifier_version per article. Returns number of
     (ticker, date) rows touched.
+
+    ``source_count`` and ``source_tiers_present`` track how many distinct
+    sources (and which reliability tiers) corroborate a ticker/date —
+    consumers use this to flag thin-coverage signal (see
+    ``Companies_News/enrichment.py``'s ``coverage_low``).
     """
     where_clause = ""
     params: dict[str, Any] = {}
@@ -182,18 +188,22 @@ def refresh_sentiment_daily(*, since: date | None = None) -> int:
     sql = f"""
         INSERT INTO sentiment_daily
             (ticker, date, n_articles, sentiment_mean, sentiment_std,
-             severity_max, classifier_version, refreshed_at)
+             severity_max, classifier_version, source_count,
+             source_tiers_present, refreshed_at)
         SELECT
             ac.ticker,
-            a.published_at::date            AS date,
-            count(*)                        AS n_articles,
-            avg(c.sentiment_score)          AS sentiment_mean,
-            stddev_samp(c.sentiment_score)  AS sentiment_std,
-            max(c.severity)                 AS severity_max,
-            max(c.classifier_version)       AS classifier_version,
-            now()                           AS refreshed_at
+            a.published_at::date                   AS date,
+            count(*)                               AS n_articles,
+            avg(c.sentiment_score)                 AS sentiment_mean,
+            stddev_samp(c.sentiment_score)          AS sentiment_std,
+            max(c.severity)                        AS severity_max,
+            max(c.classifier_version)              AS classifier_version,
+            count(DISTINCT a.source)               AS source_count,
+            array_agg(DISTINCT s.reliability_tier)  AS source_tiers_present,
+            now()                                  AS refreshed_at
         FROM articles a
         JOIN article_companies ac ON ac.article_id = a.id
+        JOIN sources s ON s.name = a.source
         JOIN LATERAL (
             SELECT *
             FROM article_classifications
@@ -205,12 +215,14 @@ def refresh_sentiment_daily(*, since: date | None = None) -> int:
           {where_clause}
         GROUP BY ac.ticker, a.published_at::date
         ON CONFLICT (ticker, date) DO UPDATE SET
-            n_articles        = EXCLUDED.n_articles,
-            sentiment_mean    = EXCLUDED.sentiment_mean,
-            sentiment_std     = EXCLUDED.sentiment_std,
-            severity_max      = EXCLUDED.severity_max,
-            classifier_version = EXCLUDED.classifier_version,
-            refreshed_at      = EXCLUDED.refreshed_at
+            n_articles           = EXCLUDED.n_articles,
+            sentiment_mean       = EXCLUDED.sentiment_mean,
+            sentiment_std        = EXCLUDED.sentiment_std,
+            severity_max         = EXCLUDED.severity_max,
+            classifier_version   = EXCLUDED.classifier_version,
+            source_count         = EXCLUDED.source_count,
+            source_tiers_present = EXCLUDED.source_tiers_present,
+            refreshed_at         = EXCLUDED.refreshed_at
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -343,3 +355,28 @@ def record_pipeline_run(
             row = cur.fetchone()
             conn.commit()
     return row[0]
+
+
+def upsert_ticker_alias(alias: str, ticker: str, *, source: str | None = None) -> None:
+    """Record (or refresh) a company-name -> ticker alias.
+
+    Called opportunistically from company_mapper.py for high-confidence,
+    explicit LLM mentions — this is how ``ticker_aliases`` is populated over
+    time, rather than from a hand-curated seed list (see migration 0006).
+    """
+    sql = """
+        INSERT INTO ticker_aliases (alias, ticker, source, updated_at)
+        VALUES (%(alias)s, %(ticker)s, %(source)s, now())
+        ON CONFLICT (alias) DO UPDATE SET
+            ticker     = EXCLUDED.ticker,
+            source     = EXCLUDED.source,
+            updated_at = EXCLUDED.updated_at
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, {
+                "alias": (alias or "").strip().lower(),
+                "ticker": ticker,
+                "source": source,
+            })
+            conn.commit()
