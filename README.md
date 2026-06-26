@@ -12,7 +12,7 @@ This package is the *single source of truth* for:
 4. Shared source-of-news registry and URL/text normalization utilities.
 5. Independent homepage source-health monitoring and weekly reports.
 
-> See `../ARCHITECTURE_REFACTOR.md` for the full design document, schema, and
+> See `../Idee_Scraping/ARCHITECTURE_REFACTOR.md` for the full design document, schema, and
 > migration plan. This README is a quick reference only.
 
 ## Installation (local, editable)
