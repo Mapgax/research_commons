@@ -148,8 +148,18 @@ def upsert_classification(
     return row[0]
 
 
-def upsert_article_companies(article_id: int, tickers: list[str]) -> None:
-    """Replace the (article_id -> ticker) mapping for one article."""
+def upsert_article_companies(
+    article_id: int,
+    tickers: list[str],
+    relevance: dict[str, float] | None = None,
+) -> None:
+    """Replace the (article_id -> ticker) mapping for one article.
+
+    ``relevance`` optionally maps ticker -> 0..1 score for the
+    ``article_companies.relevance`` column (how relevant the article is to
+    that ticker). Tickers without an entry keep relevance NULL.
+    """
+    relevance = relevance or {}
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -160,9 +170,11 @@ def upsert_article_companies(article_id: int, tickers: list[str]) -> None:
                 from psycopg2.extras import execute_values
                 execute_values(
                     cur,
-                    "INSERT INTO article_companies (article_id, ticker) VALUES %s "
-                    "ON CONFLICT (article_id, ticker) DO NOTHING",
-                    [(article_id, t) for t in tickers],
+                    "INSERT INTO article_companies (article_id, ticker, relevance) "
+                    "VALUES %s "
+                    "ON CONFLICT (article_id, ticker) DO UPDATE "
+                    "SET relevance = EXCLUDED.relevance",
+                    [(article_id, t, relevance.get(t)) for t in tickers],
                 )
             conn.commit()
 
