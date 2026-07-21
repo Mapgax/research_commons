@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from research_commons.source_health.checker import HomepageChecker
+from research_commons.source_health.checker import HTTPCheckResult, HomepageChecker
 from research_commons.source_health.classifier import SourceHealthRecord, classify_result
 from research_commons.source_health.report import (
     PreviousHealthRecord,
     build_weekly_report,
     insert_health_records,
     load_source_urls,
+    update_circuit_breaker_state,
 )
 
 
@@ -57,10 +58,10 @@ def test_checker_and_classifier_cover_working_blocked_empty_and_error() -> None:
         ]
 
     assert [record.status for record in records] == [
-        "WORKING",
-        "BLOCKED",
-        "ACCESSIBLE_NO_CONTENT",
-        "ERROR",
+        "OK",
+        "BLOCKED_ROBOTS",
+        "PARSE_FAILED",
+        "UNREACHABLE",
     ]
 
 
@@ -75,7 +76,7 @@ def test_insert_health_records_commits_rows(monkeypatch) -> None:
 
     record = SourceHealthRecord(
         source_url="https://working.example",
-        status="WORKING",
+        status="OK",
         http_status=200,
         response_time=0.42,
         last_checked=datetime.now(timezone.utc),
@@ -90,7 +91,9 @@ def test_insert_health_records_commits_rows(monkeypatch) -> None:
     sql_text, params = connection.cursor_obj.executemany_calls[0]
     assert "INSERT INTO source_health" in sql_text
     assert params[0][0] == "https://working.example"
-    assert params[0][1] == "WORKING"
+    assert params[0][1] == "OK"
+    assert params[0][8] == 0
+    assert params[0][9] is None
 
 
 def test_load_source_urls_and_report_generation(monkeypatch) -> None:
@@ -118,15 +121,18 @@ def test_load_source_urls_and_report_generation(monkeypatch) -> None:
     records = [
         SourceHealthRecord(
             source_url="https://alpha.example",
-            status="BLOCKED",
+            status="BLOCKED_HTTP",
             http_status=403,
             response_time=0.9,
             last_checked=now,
             notes="HTTP 403 blocks homepage access",
+            failure_reason="http_blocked",
+            consecutive_failures=1,
+            suggested_action="Site is actively blocking requests (401/403); consider rotating user agent or marking inactive.",
         ),
         SourceHealthRecord(
             source_url="https://beta.example",
-            status="WORKING",
+            status="OK",
             http_status=200,
             response_time=0.3,
             last_checked=now,
@@ -136,7 +142,7 @@ def test_load_source_urls_and_report_generation(monkeypatch) -> None:
     previous = {
         "https://alpha.example": PreviousHealthRecord(
             source_url="https://alpha.example",
-            status="WORKING",
+            status="OK",
             http_status=200,
             response_time=0.4,
             last_checked=now,
@@ -147,10 +153,82 @@ def test_load_source_urls_and_report_generation(monkeypatch) -> None:
     report = build_weekly_report(records, previous, generated_at=now)
 
     assert "- Total sources: 2" in report
-    assert "- BLOCKED: 1" in report
-    assert "- ERROR: 0" in report
-    assert "https://alpha.example: WORKING -> BLOCKED" in report
-    assert "https://beta.example: NEW (WORKING)" in report
+    assert "- BLOCKED_HTTP: 1" in report
+    assert "- UNREACHABLE: 0" in report
+    assert "## Degraded (1)" in report
+    assert "https://alpha.example" in report
+    assert "https://beta.example: NEW (OK)" in report
+
+
+def test_classify_result_flags_stale_after_long_gap() -> None:
+    raw = HTTPCheckResult(
+        source_url="https://working.example",
+        checked_url="https://working.example",
+        http_status=200,
+        response_time=0.1,
+        body_text="<html><body>" + ("market research news coverage " * 10) + "</body></html>",
+        final_url="https://working.example",
+    )
+    now = datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc)
+
+    fresh = classify_result(raw, checked_at=now, previous_last_ok_at=now - timedelta(days=1))
+    assert fresh.status == "OK"
+
+    stale = classify_result(raw, checked_at=now, previous_last_ok_at=now - timedelta(days=30))
+    assert stale.status == "STALE"
+    assert stale.consecutive_failures == 0
+
+    never_seen = classify_result(raw, checked_at=now, previous_last_ok_at=None)
+    assert never_seen.status == "OK"
+
+
+def test_update_circuit_breaker_state_opens_and_clears(monkeypatch) -> None:
+    connection = FakeConnection(
+        fetch_sequences=[
+            [("circuit_open",), ("last_ok_at",), ("url",)],
+        ]
+    )
+
+    @contextmanager
+    def fake_get_connection():
+        yield connection
+
+    monkeypatch.setattr("research_commons.source_health.report.get_connection", fake_get_connection)
+
+    now = datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc)
+    records = [
+        SourceHealthRecord(
+            source_url="https://alpha.example",
+            status="BLOCKED_HTTP",
+            http_status=403,
+            response_time=0.9,
+            last_checked=now,
+            notes="HTTP 403 blocks homepage access",
+            consecutive_failures=3,
+        ),
+        SourceHealthRecord(
+            source_url="https://beta.example",
+            status="OK",
+            http_status=200,
+            response_time=0.3,
+            last_checked=now,
+            notes="meaningful content",
+            consecutive_failures=0,
+        ),
+    ]
+
+    update_circuit_breaker_state(records, checked_at=now)
+
+    assert connection.committed is True
+    sql_text, params = connection.cursor_obj.executed[-2]
+    assert "UPDATE sources" in sql_text
+    assert params["circuit_open"] is True
+    assert params["source_url"] == "https://alpha.example"
+
+    sql_text, params = connection.cursor_obj.executed[-1]
+    assert params["circuit_open"] is False
+    assert params["is_success"] is True
+    assert params["source_url"] == "https://beta.example"
 
 
 class FakeCursor:

@@ -8,14 +8,16 @@ import sys
 
 from research_commons.config import configure_logging, get_source_health_settings
 from research_commons.source_health.checker import HomepageChecker
-from research_commons.source_health.classifier import classify_result
+from research_commons.source_health.classifier import DEFAULT_STALE_THRESHOLD_DAYS, classify_result
 from research_commons.source_health.emailer import send_report_email
 from research_commons.source_health.report import (
     build_weekly_report,
     insert_health_records,
     load_previous_records,
+    load_source_freshness_state,
     load_source_urls,
     save_report,
+    update_circuit_breaker_state,
 )
 
 
@@ -43,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     previous_by_url = load_previous_records(source_urls)
+    freshness_by_url = load_source_freshness_state(source_urls)
     checked_at = datetime.now(timezone.utc)
 
     with HomepageChecker(
@@ -52,16 +55,28 @@ def main(argv: list[str] | None = None) -> int:
     ) as checker:
         raw_results = checker.check_many(source_urls)
 
-    records = [
-        classify_result(
-            raw,
-            checked_at=checked_at,
-            extra_keywords=settings.source_health_keywords,
+    records = []
+    for raw in raw_results:
+        freshness = freshness_by_url.get(raw.source_url)
+        records.append(
+            classify_result(
+                raw,
+                checked_at=checked_at,
+                extra_keywords=settings.source_health_keywords,
+                previous_consecutive_failures=(
+                    previous_by_url[raw.source_url].consecutive_failures
+                    if raw.source_url in previous_by_url
+                    else 0
+                ),
+                previous_last_ok_at=freshness.last_ok_at if freshness else None,
+                stale_threshold_days=(
+                    freshness.stale_threshold_days if freshness else DEFAULT_STALE_THRESHOLD_DAYS
+                ),
+            )
         )
-        for raw in raw_results
-    ]
 
     insert_health_records(records)
+    update_circuit_breaker_state(records, checked_at=checked_at)
 
     markdown_report = build_weekly_report(
         records,

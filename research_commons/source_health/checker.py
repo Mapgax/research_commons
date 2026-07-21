@@ -50,6 +50,8 @@ class HTTPCheckResult:
     bot_protection_detected: bool = False
     error: str | None = None
     note: str = ""
+    failure_reason: str | None = None
+    failure_detail: str | None = None
 
 
 class HomepageChecker:
@@ -106,6 +108,8 @@ class HomepageChecker:
                 final_url=None,
                 robots_disallowed=True,
                 note=robots_note,
+                failure_reason="robots_disallowed",
+                failure_detail=robots_note,
             )
 
         last_error: str | None = None
@@ -139,6 +143,8 @@ class HomepageChecker:
                         body_text="",
                         final_url=None,
                         error=last_error,
+                        failure_reason="request_error",
+                        failure_detail=last_error,
                     )
                 continue
 
@@ -154,6 +160,7 @@ class HomepageChecker:
                 continue
 
             body_text = response.text[:50_000]
+            bot_reason = _bot_protection_reason(response, body_text)
             return HTTPCheckResult(
                 source_url=source_url,
                 checked_url=checked_url,
@@ -161,8 +168,10 @@ class HomepageChecker:
                 response_time=elapsed,
                 body_text=body_text,
                 final_url=str(response.url),
-                bot_protection_detected=_looks_like_bot_protection(response, body_text),
+                bot_protection_detected=bot_reason is not None,
                 note="",
+                failure_reason="bot_protection" if bot_reason is not None else None,
+                failure_detail=bot_reason,
             )
 
         return HTTPCheckResult(
@@ -173,6 +182,8 @@ class HomepageChecker:
             body_text="",
             final_url=None,
             error=last_error or "Unknown error",
+            failure_reason="request_error",
+            failure_detail=last_error or "Unknown error",
         )
 
     def _check_robots(self, checked_url: str) -> str | None:
@@ -208,16 +219,19 @@ def _normalise_url(source_url: str) -> str:
     return f"https://{trimmed}"
 
 
-def _looks_like_bot_protection(response: httpx.Response, body_text: str) -> bool:
+def _bot_protection_reason(response: httpx.Response, body_text: str) -> str | None:
     if response.status_code == 429:
-        return True
+        return "HTTP 429 (rate limited)"
 
     server = response.headers.get("server", "").lower()
     if "cloudflare" in server:
-        return True
+        return "Cloudflare-fronted response"
 
     if response.headers.get("cf-mitigated"):
-        return True
+        return f"cf-mitigated header: {response.headers['cf-mitigated']}"
 
     haystack = f"{server}\n{body_text.lower()[:5_000]}"
-    return any(marker in haystack for marker in _BOT_PROTECTION_MARKERS)
+    for marker in _BOT_PROTECTION_MARKERS:
+        if marker in haystack:
+            return f"matched marker: {marker!r}"
+    return None
