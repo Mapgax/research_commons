@@ -25,6 +25,7 @@ from typing import Iterator
 
 import psycopg2
 import psycopg2.pool
+import psycopg2.sql
 
 from research_commons.config import get_settings
 
@@ -70,14 +71,32 @@ def get_connection() -> Iterator[psycopg2.extensions.connection]:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
 
-    On exception the connection is rolled back and returned to the pool with
-    ``close=True`` so a poisoned session can't be re-used.
+    On clean exit the transaction is committed. On exception it's rolled back
+    and the connection is returned to the pool with ``close=True`` so a
+    poisoned session can't be re-used. Callers do not need to (but may) call
+    ``conn.commit()`` themselves — this is the actual commit boundary, not a
+    convention callers must remember.
+
+    If ``MARKET_ROLE`` is set, every connection issues ``SET ROLE`` to it
+    immediately after connecting (Postgres role-switching, not a new login —
+    the connecting user must already be a member of that role). This is
+    opt-in and currently a no-op in production: ``MARKET_ROLE`` is unset
+    everywhere today, and the one role that exists for this
+    (``sector_reader``) has zero GRANTs on any table, so switching to it
+    without first granting SELECT on every table a consumer needs would
+    break every read. Provisioning that role is a deliberate follow-up, not
+    something this connection helper does on its own.
     """
     pool = get_pool()
     conn = pool.getconn()
     ok = False
     try:
+        role = get_settings().market_role
+        if role:
+            with conn.cursor() as cur:
+                cur.execute(psycopg2.sql.SQL("SET ROLE {}").format(psycopg2.sql.Identifier(role)))
         yield conn
+        conn.commit()
         ok = True
     except Exception:
         try:
