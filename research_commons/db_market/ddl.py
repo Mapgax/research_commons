@@ -1,16 +1,17 @@
 """Python view of the DB1 schema.
 
-This module exists for **two** reasons:
-
-1. To give CI/tests a Python-importable list of expected tables that can be
-   compared against ``information_schema.tables`` at startup.
-2. To document the natural keys that ``writes.py`` relies on for upserts.
-
-The actual DDL lives in ``migrations/market/0001_init.sql``. Treat THIS file as
-read-only metadata; never use it as a substitute for the real migration.
+This module exposes importable metadata (`EXPECTED_TABLES`, `NATURAL_KEYS`) for
+tests and callers, plus a minimal bootstrap helper mirroring the news-side
+``db_news.ddl.create_tables``. The actual SQL lives in
+``migrations/market/*.sql`` so the schema stays defined in one place.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+from typing import Iterable
+
+import psycopg2.extensions
 
 EXPECTED_TABLES: tuple[str, ...] = (
     "prices",
@@ -54,3 +55,29 @@ NATURAL_KEYS: dict[str, tuple[str, ...]] = {
     "scheduler_runs":       ("id",),
     "app_state":            ("key",),
 }
+
+
+def _migration_paths() -> Iterable[Path]:
+    migrations_dir = Path(__file__).resolve().parents[2] / "migrations" / "market"
+    return sorted(migrations_dir.glob("*.sql"))
+
+
+def create_tables(conn: psycopg2.extensions.connection) -> None:
+    """Apply the bundled market DB migrations in filename order.
+
+    Same design as ``db_news.ddl.create_tables``: schema ownership stays in
+    SQL, idempotence is delegated to the migrations themselves, one connection
+    in, commit on success, rollback on failure.
+    """
+    migration_paths = tuple(_migration_paths())
+    if not migration_paths:
+        raise FileNotFoundError("No market DB migration files were found.")
+
+    try:
+        with conn.cursor() as cur:
+            for migration_path in migration_paths:
+                cur.execute(migration_path.read_text(encoding="utf-8"))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise

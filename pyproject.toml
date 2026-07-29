@@ -31,6 +31,11 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
 ]
+# Only needed to run the universe ingest CLI with .xlsx uploads; consumers
+# (Railway images, GHA runners) never parse xlsx and must not inherit it.
+universe = [
+    "openpyxl>=3.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

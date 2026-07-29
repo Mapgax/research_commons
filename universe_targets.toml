@@ -1,0 +1,17 @@
+# Distribution targets for `python3 -m research_commons.universe`.
+#
+# Each target receives a regenerated tickers.csv on `ingest --apply` /
+# `distribute --apply`. The `remote` value is matched (substring,
+# case-insensitive) against `git remote get-url origin` before any write —
+# this guards against writing into a stale clone after a repo moves on disk
+# (the MSARN checkout has moved once already).
+
+[[target]]
+name = "MSARN"
+path = "/Users/andreas/Projects/AI/project_MSARN"
+remote = "Mapgax/MSARN-pipeline"
+
+[[target]]
+name = "Companies_News"
+path = "/Users/andreas/Desktop/RBZ_Projects/Companies_News"
+remote = "Mapgax/Companies_News"

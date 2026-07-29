@@ -77,6 +77,38 @@ python3 scripts/check_connections.py
 This pings both databases, lists the tables it finds, and runs a 1-token LLM
 call to verify the API key without writing anything.
 
+## Ticker universe management
+
+The canonical ticker universe lives here: `data/ticker_universe.csv` is the
+single hand-maintainable source (status, resolutions, notes), mirrored
+into `market.ticker_metadata` (this tool is the **only** writer) and
+distributed as `tickers.csv` into MSARN and Companies_News (targets declared
+in `universe_targets.toml`; consumer runtime stays CSV-authoritative).
+
+To expand or refocus coverage, drop an update file anywhere and run:
+
+```bash
+# general update (additive; new names enter as watchlist = zero cost)
+python3 -m research_commons.universe ingest ~/Downloads/universe_update_20260728.xlsx --mode universe
+
+# focus update (snapshot: in file -> active, previously-active absent -> inactive)
+python3 -m research_commons.universe ingest ~/Downloads/focus_update_20260801.csv --mode focus
+```
+
+Naming convention: `universe_update_YYYYMMDD[_HHMM].xlsx|csv` and
+`focus_update_YYYYMMDD[_HHMM].xlsx|csv` (checked against `--mode`).
+
+Runs are **plan-only by default** — review the printed report (adds, focus
+changes, quarantined issues with suggested actions, cost delta), then re-run
+with `--apply`. Applying writes canonical → DB → consumer repos → archives the
+input under `data/archive/updates/YYYY/` and the report under
+`reports/universe/`, then prints the exact per-repo commit commands. Issues
+that need manual resolution are quarantined, never merged silently; recurring
+known non-additions (rights lines, superseded ISINs) live in
+`data/universe_ignore.csv`. Other subcommands: `verify` (canonical-vs-DB drift
+check), `distribute`, `sync-db`, `rename-ticker OLD NEW` (PK rename with FK
+cascade). `.xlsx` input needs the optional extra: `pip install -e '.[universe]'`.
+
 ## Source health runner
 
 After applying `migrations/news/0003_source_health.sql`, run:

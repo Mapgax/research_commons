@@ -13,6 +13,7 @@ Frozen API surface:
     upsert_alt_data(rows: list[dict]) -> int
     upsert_insider_transactions(rows: list[dict]) -> int
     upsert_option_metrics(rows: list[dict]) -> int
+    upsert_ticker_metadata(rows: list[dict]) -> int
     register_model(...) -> int
     record_backtest_result(...) -> int
 """
@@ -274,6 +275,50 @@ def upsert_option_metrics(rows: list[dict[str, Any]]) -> int:
             execute_values(cur, sql, values, page_size=500)
             count = cur.rowcount
             conn.commit()
+    return count
+
+
+def upsert_ticker_metadata(rows: list[dict[str, Any]]) -> int:
+    """Insert or update canonical registry rows. Returns rows affected.
+
+    This is the ONLY write path to ``ticker_metadata``: the central universe
+    ingest tool (``research_commons.universe``) calls it after a merge run.
+    Consumer projects must not write this table (MSARN's legacy
+    ``sync_registry_metadata`` was retired in the same release).
+    """
+    if not rows:
+        return 0
+
+    # updated_at is intentionally absent from the column list: the column
+    # default (now()) covers inserts and the conflict branch refreshes it.
+    sql = """
+        INSERT INTO ticker_metadata
+            (ticker, company_name, isin, bloomberg_ticker, yahoo_symbol,
+             sector_name, currency, scope_status)
+        VALUES %s
+        ON CONFLICT (ticker) DO UPDATE SET
+            company_name     = EXCLUDED.company_name,
+            isin             = EXCLUDED.isin,
+            bloomberg_ticker = EXCLUDED.bloomberg_ticker,
+            yahoo_symbol     = EXCLUDED.yahoo_symbol,
+            sector_name      = EXCLUDED.sector_name,
+            currency         = EXCLUDED.currency,
+            scope_status     = EXCLUDED.scope_status,
+            updated_at       = now()
+    """
+    values = [
+        (r["ticker"], r["company_name"], r.get("isin") or None,
+         r.get("bloomberg_ticker") or None, r["yahoo_symbol"],
+         r.get("sector_name") or None, r["currency"],
+         r.get("scope_status", "watchlist"))
+        for r in rows
+    ]
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            execute_values(cur, sql, values, page_size=500)
+            count = cur.rowcount
+            conn.commit()
+    logger.debug("upsert_ticker_metadata: %d rows", count)
     return count
 
 
