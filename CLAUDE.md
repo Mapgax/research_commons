@@ -16,6 +16,12 @@ release. Consumers pick it up on their next install/build (Railway rebuild, GHA 
 
 ## Ecosystem map
 
+This repo lives at `~/Projects/AI/research_commons` — moved there from
+`~/Desktop/RBZ_Projects/` on 2026-07-29, so it now sits beside MSARN. It is
+`pip install -e`'d into system Python 3.12; **that editable install hardcodes the
+path**, so moving this checkout again requires re-running `pip install -e ".[dev]"`
+from the new location or every `import research_commons` breaks.
+
 | Project | Path | Uses this library for |
 |---|---|---|
 | MSARN | `~/Projects/AI/project_MSARN` (**not** under RBZ_Projects) | market DB connection, ticker registry via generated `tickers.csv` |
