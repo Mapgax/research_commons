@@ -223,8 +223,21 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             f"(+{len(plan.promotions)} active, -{len(plan.demotions)})"
         )
     print()
-    print(f"Suggested research_commons commit: {summary!r}")
-    print(commit_instructions(target_results, summary))
+    print(f"research_commons commit: {summary!r}")
+    if args.no_push:
+        print(commit_instructions(target_results, summary))
+    else:
+        from research_commons.universe.dist import push_targets
+        target_results = push_targets(target_results, "tickers.csv", summary)
+        for result in target_results:
+            marker = "✓" if result.pushed else "✗"
+            print(f"  {marker} {result.target.name}: {result.push_message}")
+        if any(not r.pushed for r in target_results):
+            print(
+                "\nSome targets did not push automatically — see messages above "
+                "and push manually where needed.",
+                file=sys.stderr,
+            )
     if plan.quarantined:
         print()
         print(
@@ -283,7 +296,7 @@ def cmd_sync_db(_args: argparse.Namespace) -> int:
 
 def cmd_distribute(args: argparse.Namespace) -> int:
     from research_commons.universe import canonical_path, targets_path
-    from research_commons.universe.dist import commit_instructions, distribute, load_targets
+    from research_commons.universe.dist import commit_instructions, distribute, load_targets, push_targets
     from research_commons.universe.io import read_canonical
 
     rows = read_canonical(canonical_path())
@@ -299,8 +312,17 @@ def cmd_distribute(args: argparse.Namespace) -> int:
     if not args.apply:
         print("Plan only — pass --apply to write the files.")
         return 0
+    summary = "universe: refresh tickers.csv from canonical"
     print()
-    print(commit_instructions(results, "universe: refresh tickers.csv from canonical"))
+    if args.no_push:
+        print(commit_instructions(results, summary))
+    else:
+        results = push_targets(results, "tickers.csv", summary)
+        for result in results:
+            marker = "✓" if result.pushed else "✗"
+            print(f"  {marker} {result.target.name}: {result.push_message}")
+        if any(not r.pushed for r in results):
+            return 1
     return 0
 
 
@@ -357,7 +379,17 @@ def cmd_rename_ticker(args: argparse.Namespace) -> int:
     for result in results:
         marker = "✓" if result.ok else "✗"
         print(f"  {marker} {result.target.name}: {result.message}")
-    print(commit_instructions(results, f"universe: rename {old} -> {new}"))
+    summary = f"universe: rename {old} -> {new}"
+    if args.no_push:
+        print(commit_instructions(results, summary))
+    else:
+        from research_commons.universe.dist import push_targets
+        results = push_targets(results, "tickers.csv", summary)
+        for result in results:
+            marker = "✓" if result.pushed else "✗"
+            print(f"  {marker} {result.target.name}: {result.push_message}")
+        if any(not r.pushed for r in results):
+            return 1
     return 0
 
 
@@ -447,11 +479,18 @@ def cmd_update_email_focus(args: argparse.Namespace) -> int:
     if any(not r.ok for r in results):
         return _fail("email-focus distribution did not write to every target")
 
+    summary = "universe: update email_focus_tickers.csv"
     print()
-    print(commit_instructions(
-        results, "universe: update email_focus_tickers.csv",
-        filename="email_focus_tickers.csv",
-    ))
+    if args.no_push:
+        print(commit_instructions(results, summary, filename="email_focus_tickers.csv"))
+    else:
+        from research_commons.universe.dist import push_targets
+        results = push_targets(results, "email_focus_tickers.csv", summary)
+        for result in results:
+            marker = "✓" if result.pushed else "✗"
+            print(f"  {marker} {result.target.name}: {result.push_message}")
+        if any(not r.pushed for r in results):
+            return 1
     return 0
 
 
@@ -485,6 +524,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-quarantine", action="store_true",
         help="apply the clean part even when quarantined issues remain",
     )
+    ingest.add_argument(
+        "--no-push", action="store_true",
+        help="write + commit locally in each consumer repo but don't push "
+             "(default: commit and push automatically on --apply)",
+    )
     ingest.set_defaults(func=cmd_ingest)
 
     verify = sub.add_parser("verify", help="read-only canonical-vs-DB drift check")
@@ -495,6 +539,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     dist = sub.add_parser("distribute", help="regenerate consumer tickers.csv files")
     dist.add_argument("--apply", action="store_true", help="write files (default: check only)")
+    dist.add_argument(
+        "--no-push", action="store_true",
+        help="write + commit locally but don't push (default: push automatically on --apply)",
+    )
     dist.set_defaults(func=cmd_distribute)
 
     rename = sub.add_parser(
@@ -504,6 +552,10 @@ def build_parser() -> argparse.ArgumentParser:
     rename.add_argument("old")
     rename.add_argument("new")
     rename.add_argument("--apply", action="store_true", help="execute (default: plan only)")
+    rename.add_argument(
+        "--no-push", action="store_true",
+        help="write + commit locally but don't push (default: push automatically on --apply)",
+    )
     rename.set_defaults(func=cmd_rename_ticker)
 
     email_focus = sub.add_parser(
@@ -515,6 +567,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="path to the upload file (default: most recent in universe_update_xlsx_files/)",
     )
     email_focus.add_argument("--apply", action="store_true", help="execute (default: plan only)")
+    email_focus.add_argument(
+        "--no-push", action="store_true",
+        help="write + commit locally but don't push (default: push automatically on --apply)",
+    )
     email_focus.set_defaults(func=cmd_update_email_focus)
 
     return parser

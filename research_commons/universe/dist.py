@@ -8,8 +8,13 @@ expected git remote per target. Before writing, each target must:
     stale clone after a repo moves — it has happened), and
   * have a clean ``tickers.csv`` in git (no uncommitted local edits to clobber).
 
-Writes are temp-file + atomic rename. Nothing is committed automatically; the
-tool prints per-repo status and the exact commands to run.
+Writes are temp-file + atomic rename. As of 2026-07-30, a successful
+``--apply`` also commits and pushes each target automatically (see
+:func:`push_targets`) — this closes the gap between "canonical file changed"
+and "consumers actually have it," which used to require a human to run the
+printed git commands in up to four separate repos. ``distribute`` (no
+``--apply``) remains a pure plan/dry-run: nothing is written OR pushed unless
+``--apply`` is passed.
 """
 
 from __future__ import annotations
@@ -41,6 +46,8 @@ class TargetResult:
     target: Target
     ok: bool
     message: str
+    pushed: bool = False
+    push_message: str = ""
 
 
 def load_targets(toml_path: Path) -> list[Target]:
@@ -255,6 +262,57 @@ def distribute_email_focus(
                 pending_result.message = f"commit failed: {exc}"
             return results
         result.message = f"wrote {out_path}"
+    return results
+
+
+def push_targets(
+    results: list[TargetResult], filename: str, summary: str
+) -> list[TargetResult]:
+    """Commit and push *filename* in every target that was successfully written.
+
+    Only touches results with ``ok=True`` — a failed or skipped write leaves
+    nothing to push. A push failure (network, diverged branch, pre-commit
+    hook, ...) does NOT flip ``result.ok`` back to False: the file write
+    already succeeded and is safely on disk. ``result.pushed`` /
+    ``result.push_message`` report the push outcome separately, so "the file
+    is written but not yet pushed" stays distinguishable from "nothing
+    happened at all."
+    """
+    for result in results:
+        if not result.ok:
+            continue
+        target = result.target
+        add_proc = _git(target.path, "add", filename)
+        if add_proc.returncode != 0:
+            result.push_message = f"git add failed: {add_proc.stderr.strip()}"
+            continue
+
+        # Check the actual staged diff rather than pattern-matching commit's
+        # human-readable output — git's "nothing to commit" message has
+        # several phrasings ("nothing to commit, working tree clean" vs.
+        # "nothing added to commit but untracked files present" when other
+        # untracked files exist alongside a clean *filename*), and matching
+        # only one of them misreported a legitimate no-op as a failure.
+        diff_proc = _git(target.path, "diff", "--cached", "--quiet", "--", filename)
+        if diff_proc.returncode == 0:
+            result.pushed = True
+            result.push_message = "nothing to commit (content unchanged)"
+            continue
+
+        commit_proc = _git(target.path, "commit", "-m", summary, "--", filename)
+        if commit_proc.returncode != 0:
+            detail = commit_proc.stderr.strip() or commit_proc.stdout.strip()
+            result.push_message = f"git commit failed: {detail}"
+            continue
+        push_proc = _git(target.path, "push")
+        if push_proc.returncode != 0:
+            result.push_message = (
+                f"COMMITTED LOCALLY BUT PUSH FAILED: {push_proc.stderr.strip()} "
+                f"— push manually: git -C {target.path} push"
+            )
+            continue
+        result.pushed = True
+        result.push_message = "pushed"
     return results
 
 

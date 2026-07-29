@@ -28,6 +28,10 @@ from the new location or every `import research_commons` breaks.
 | Companies_News | `~/Desktop/RBZ_Projects/Companies_News` | news DB reads/writes, LLM client, source registry |
 | Idee_Scraping | `~/Desktop/RBZ_Projects/Idee_Scraping` | news DB, `resolve_alias` / `upsert_ticker_alias` |
 
+Idee_Scraping is **intentionally not** a `distribute` target and has no
+`tickers.csv` — its value is discovering companies outside any fixed list, so
+it stays scope-agnostic by design. Don't add it to `universe_targets.toml`.
+
 Two Aiven Postgres databases: **`market`** (prices, fundamentals, features,
 `ticker_metadata`) and **`news`** (articles, classifications, sentiment, aliases).
 
@@ -83,14 +87,22 @@ python3 -m research_commons.universe sync-db
 python3 -m research_commons.universe rename-ticker OLD NEW --apply
 ```
 
+**`--apply` now commits and pushes each consumer repo automatically** (since
+2026-07-30 — `push_targets()` in `dist.py`), for `ingest --apply`,
+`distribute --apply`, `rename-ticker --apply`, and `update-email-focus --apply`
+alike. A push failure doesn't undo the local write or commit — it's reported
+per-target so you can push that one manually. Pass `--no-push` to commit
+locally without pushing (e.g. to review the diff before it ships). This repo's
+own canonical-file commit is never automated — only the consumer repos are.
+
 Rules that must not be broken:
 
 - **This tool is the only writer to `market.ticker_metadata`.** MSARN's
   `sync_registry_metadata()` was reduced to a read-only drift check, and
   `ticker_metadata` was removed from its `MARKET_TABLE_MIGRATION_COLUMNS` map, so no
   second schema manager patches that table. Don't reintroduce either.
-- Ingest is **plan-only by default**; `--apply` writes. Quarantined issues are never
-  merged silently.
+- Ingest is **plan-only by default**; `--apply` writes (and, unless `--no-push`
+  is passed, pushes). Quarantined issues are never merged silently.
 - Merge key is **ISIN**, never the ticker. An existing row's ticker changes only via
   `rename-ticker` (which relies on `ON UPDATE CASCADE` across the six FK tables —
   `prices`, `fundamentals`, `features`, `alt_data`, `insider_transactions`,
