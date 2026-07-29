@@ -33,6 +33,7 @@ class Target:
     name: str
     path: Path
     remote: str
+    email_focus: bool = False  # also distribute data/email_focus_tickers.csv here
 
 
 @dataclass
@@ -57,6 +58,7 @@ def load_targets(toml_path: Path) -> list[Target]:
                 name=str(entry["name"]),
                 path=Path(str(entry["path"])).expanduser(),
                 remote=str(entry["remote"]),
+                email_focus=bool(entry.get("email_focus", False)),
             )
         )
     if not targets:
@@ -170,7 +172,95 @@ def distribute(
     return results
 
 
-def commit_instructions(results: list[TargetResult], summary: str) -> str:
+def check_email_focus_target(target: Target) -> str:
+    """Same safety check as check_target, scoped to email_focus_tickers.csv."""
+    if not target.path.is_dir():
+        return f"path does not exist: {target.path}"
+    status_proc = _git(target.path, "status", "--porcelain", "--", "email_focus_tickers.csv")
+    if status_proc.returncode != 0:
+        return f"git status failed: {status_proc.stderr.strip()}"
+    if status_proc.stdout.strip():
+        return (
+            "email_focus_tickers.csv has uncommitted local changes — commit or "
+            "discard them first so distribution cannot clobber hand edits"
+        )
+    return ""
+
+
+def distribute_email_focus(
+    targets: list[Target],
+    content: str,
+    *,
+    apply: bool,
+) -> list[TargetResult]:
+    """Write data/email_focus_tickers.csv into every target with email_focus=True.
+
+    Mirrors :func:`distribute`'s check-everything-then-two-phase-commit shape,
+    scoped to a single pre-rendered file rather than the UniverseRow-shaped
+    tickers.csv — the email-focus file has a different schema (see
+    :mod:`research_commons.universe.email_focus`), so it gets its own small
+    distribution path instead of overloading ``distribute()``'s signature.
+    """
+    import os
+    import tempfile
+
+    email_targets = [t for t in targets if t.email_focus]
+    results: list[TargetResult] = []
+    errors = False
+    for target in email_targets:
+        problem = check_email_focus_target(target)
+        if problem:
+            results.append(TargetResult(target=target, ok=False, message=problem))
+            errors = True
+        else:
+            results.append(TargetResult(target=target, ok=True, message="ready"))
+
+    if errors or not apply:
+        return results
+
+    def _stage(out_path: Path) -> Path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=out_path.parent, prefix=f".{out_path.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+                fh.write(content)
+        except BaseException:
+            discard_staged(Path(tmp_name))
+            raise
+        return Path(tmp_name)
+
+    staged: list[tuple[TargetResult, Path, Path]] = []
+    try:
+        for result in results:
+            out_path = result.target.path / "email_focus_tickers.csv"
+            staged.append((result, _stage(out_path), out_path))
+    except OSError as exc:
+        for _, tmp_path, _ in staged:
+            discard_staged(tmp_path)
+        for result in results:
+            result.ok = False
+            result.message = f"staging failed, nothing written: {exc}"
+        return results
+
+    for index, (result, tmp_path, out_path) in enumerate(staged):
+        try:
+            commit_staged(tmp_path, out_path)
+        except OSError as exc:
+            for _, pending_tmp, _ in staged[index:]:
+                discard_staged(pending_tmp)
+            for pending_result, _, _ in staged[index:]:
+                pending_result.ok = False
+                pending_result.message = f"commit failed: {exc}"
+            return results
+        result.message = f"wrote {out_path}"
+    return results
+
+
+def commit_instructions(
+    results: list[TargetResult], summary: str, *, filename: str = "tickers.csv"
+) -> str:
     lines = ["To publish the update, commit and push each repo:"]
     for result in results:
         if not result.ok:
@@ -178,7 +268,7 @@ def commit_instructions(results: list[TargetResult], summary: str) -> str:
         lines.append("")
         lines.append(f"# {result.target.name}")
         lines.append(
-            f"git -C {result.target.path} add tickers.csv && "
+            f"git -C {result.target.path} add {filename} && "
             f"git -C {result.target.path} commit -m {summary!r} && "
             f"git -C {result.target.path} push"
         )

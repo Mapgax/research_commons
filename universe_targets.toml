@@ -5,6 +5,10 @@
 # case-insensitive) against `git remote get-url origin` before any write —
 # this guards against writing into a stale clone after a repo moves on disk
 # (the MSARN checkout has moved once already).
+#
+# `email_focus = true` additionally distributes data/email_focus_tickers.csv
+# to that target on `update-email-focus --apply` — the PM/advisory email
+# audience file, independent of the coverage/scope_status tickers.csv above.
 
 [[target]]
 name = "MSARN"
@@ -15,3 +19,4 @@ remote = "Mapgax/MSARN-pipeline"
 name = "Companies_News"
 path = "/Users/andreas/Desktop/RBZ_Projects/Companies_News"
 remote = "Mapgax/Companies_News"
+email_focus = true

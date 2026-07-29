@@ -98,12 +98,52 @@ Rules that must not be broken:
 - **Currency is never auto-refreshed.** Upload files carry `DenCurrency`, a
   *denomination* currency that is frequently wrong about the trading currency
   (EUR for LSE names, USD for Hong Kong lines). Mismatches are reported, not applied.
-- `scope_status` is the single coverage/delivery dial: `active` (collected +
-  delivered), `inactive` (collected only), `watchlist` (metadata only). The old
-  `scope_pm_ch` / `scope_pm_de` / `scope_advisory` audience flags were retired on
-  2026-07-29 (values archived in `data/archive/retired_scope_flags_20260729.csv`).
+- `scope_status` is the single **coverage** dial: `active` (collected, features
+  computed, default training/dashboard scope), `inactive` (collected only),
+  `watchlist` (metadata only, no automatic backfill). It does **not** govern
+  email delivery — see the email-focus workflow below.
 - The CLI refuses to run from an installed copy — `data/` and `reports/` are repo-root
   artifacts, deliberately outside the package.
+
+## Email-focus audience — PM/advisory delivery, separate from coverage
+
+`data/email_focus_tickers.csv` (repo root, git-versioned, `;`-delimited) is a
+**second, deliberately independent dial**: who gets emailed, as opposed to
+`scope_status` above, which governs collection/coverage only. A ticker can be
+covered (`scope_status=active`) and never emailed, or emailed regardless of
+its coverage status — the two are unrelated.
+
+The old `scope_pm_ch` / `scope_pm_de` / `scope_advisory` audience flags used
+to live as columns on the main universe file; they were retired from there on
+2026-07-29 (values archived in `data/archive/retired_scope_flags_20260729.csv`)
+and reinstated the same day as this standalone file instead, after the
+retirement turned out to remove audience targeting the email pipeline still
+needed. **Do not re-add these columns to `ticker_universe.csv`** — this file
+is the one and only place they live now.
+
+Columns: `ISIN;company_name;scope_pm_ch;scope_pm_de;scope_advisory;email_scope`.
+An ISIN absent from the file counts as `0` for all four flags, including
+`email_scope` (i.e. excluded from the email by default). `email_scope` is a
+real, independently-editable column — populated equal to `scope_pm_ch` by
+convention today, but the file is the source of truth and the two can diverge.
+
+```bash
+# merge an uploaded PM/advisory file (universe_update_xlsx_files/, or an
+# explicit path) into data/email_focus_tickers.csv, then distribute it to
+# every target flagged email_focus=true in universe_targets.toml
+python3 -m research_commons.universe update-email-focus [file] --apply
+```
+
+Plan-only by default (omit `--apply`). An ISIN that drops out of the latest
+upload isn't silently zeroed: the command prints its current values and asks
+whether to keep them or reset to `0` — except `scope_advisory`, which always
+resets to `0` on removal with no prompt (missing means false for advisory
+specifically, not for the PM/email flags). A non-interactive stdin (e.g. cron)
+defaults to "keep" rather than blocking.
+
+Companies_News reads `email_scope` (not `scope_status`) to decide who gets the
+briefing email — see `load_email_focus_tickers()` / `email_focus_delivery_tickers()`
+there.
 
 ## Migrations
 

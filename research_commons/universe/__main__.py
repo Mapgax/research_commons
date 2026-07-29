@@ -8,6 +8,7 @@ Usage:
     python3 -m research_commons.universe distribute [--apply]
     python3 -m research_commons.universe sync-db
     python3 -m research_commons.universe rename-ticker OLD NEW [--apply]
+    python3 -m research_commons.universe update-email-focus [file] [--apply]
 
 ``ingest`` is plan-only by default: it prints the full merge report (adds,
 promotions/demotions, quarantined issues, cost delta) and writes nothing.
@@ -17,6 +18,12 @@ archive + report, aborting on the first failure.
 Update-file naming convention (checked against --mode):
     universe_update_YYYYMMDD[_HHMM].xlsx|csv   (general, additive)
     focus_update_YYYYMMDD[_HHMM].xlsx|csv      (focus snapshot)
+
+``update-email-focus`` merges a PM/advisory audience upload (default: most
+recent file in universe_update_xlsx_files/) into data/email_focus_tickers.csv
+-- a second, independent dial from scope_status that governs who gets the
+briefing email, not what gets collected. See email_focus.py for the merge
+semantics and CLAUDE.md's "Email-focus audience" section for the full picture.
 """
 
 from __future__ import annotations
@@ -354,6 +361,100 @@ def cmd_rename_ticker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _interactive_resolve_removed(row) -> bool:
+    """Prompt for an ISIN that dropped out of the latest email-focus upload.
+
+    Defaults to "keep" (the least destructive answer) when stdin isn't a
+    TTY, rather than blocking on input() forever.
+    """
+    if not sys.stdin.isatty():
+        print(
+            f"  ! {row.isin} ({row.company_name}) missing from upload, stdin is "
+            f"not interactive — defaulting to KEEP (pm_ch={row.scope_pm_ch} "
+            f"pm_de={row.scope_pm_de} email_scope={row.email_scope}); "
+            "scope_advisory resets to 0 either way.",
+            file=sys.stderr,
+        )
+        return True
+    print(
+        f"\n{row.isin}  {row.company_name}\n"
+        f"  currently: scope_pm_ch={row.scope_pm_ch}  scope_pm_de={row.scope_pm_de}  "
+        f"scope_advisory={row.scope_advisory}  email_scope={row.email_scope}\n"
+        "  — missing from this upload. scope_advisory resets to 0 either way."
+    )
+    while True:
+        answer = input("  keep pm/email at current values, or zero them? [k/z]: ").strip().lower()
+        if answer in {"k", "keep"}:
+            return True
+        if answer in {"z", "zero"}:
+            return False
+        print("  please answer 'k' (keep) or 'z' (zero)")
+
+
+def cmd_update_email_focus(args: argparse.Namespace) -> int:
+    from research_commons.universe import canonical_path, email_focus_path, email_focus_update_dir, targets_path
+    from research_commons.universe.dist import commit_instructions, distribute_email_focus, load_targets
+    from research_commons.universe.email_focus import (
+        latest_update_file,
+        plan_email_focus_merge,
+        read_email_focus,
+        read_email_focus_upload,
+        write_email_focus,
+        _rows_to_csv,
+    )
+
+    if args.file:
+        source = Path(args.file).expanduser()
+    else:
+        source = latest_update_file(email_focus_update_dir())
+        if source is None:
+            return _fail(
+                f"no update file given and none found in {email_focus_update_dir()} "
+                "(expected a .xlsx or .csv there, or pass a path explicitly)"
+            )
+        print(f"Using most recent upload: {source}")
+    if not source.exists():
+        return _fail(f"update file not found: {source}")
+
+    try:
+        upload_rows = read_email_focus_upload(source)
+    except (RuntimeError, ValueError) as exc:
+        return _fail(str(exc))
+    if not upload_rows:
+        return _fail(f"no data rows found in {source.name}")
+
+    current_rows = read_email_focus(email_focus_path())
+    plan = plan_email_focus_merge(current_rows, upload_rows, resolve_removed=_interactive_resolve_removed)
+
+    print(f"\nAdded:   {len(plan.added)}")
+    print(f"Updated: {len(plan.updated)}")
+    print(f"Kept (removed from upload, pm/email unchanged, advisory->0): {len(plan.kept)}")
+    print(f"Zeroed (removed from upload, all flags->0): {len(plan.zeroed)}")
+
+    if not args.apply:
+        print("\nPlan only — nothing written. Re-run with --apply to execute.")
+        return 0
+
+    write_email_focus(email_focus_path(), plan.result)
+    print(f"✓ {email_focus_path()} updated ({len(plan.result)} rows)")
+
+    targets = load_targets(targets_path())
+    content = _rows_to_csv(plan.result)
+    results = distribute_email_focus(targets, content, apply=True)
+    for result in results:
+        marker = "✓" if result.ok else "✗"
+        print(f"  {marker} {result.target.name}: {result.message}")
+    if any(not r.ok for r in results):
+        return _fail("email-focus distribution did not write to every target")
+
+    print()
+    print(commit_instructions(
+        results, "universe: update email_focus_tickers.csv",
+        filename="email_focus_tickers.csv",
+    ))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python3 -m research_commons.universe",
@@ -404,6 +505,17 @@ def build_parser() -> argparse.ArgumentParser:
     rename.add_argument("new")
     rename.add_argument("--apply", action="store_true", help="execute (default: plan only)")
     rename.set_defaults(func=cmd_rename_ticker)
+
+    email_focus = sub.add_parser(
+        "update-email-focus",
+        help="merge a PM/advisory audience upload into data/email_focus_tickers.csv",
+    )
+    email_focus.add_argument(
+        "file", nargs="?", default=None,
+        help="path to the upload file (default: most recent in universe_update_xlsx_files/)",
+    )
+    email_focus.add_argument("--apply", action="store_true", help="execute (default: plan only)")
+    email_focus.set_defaults(func=cmd_update_email_focus)
 
     return parser
 

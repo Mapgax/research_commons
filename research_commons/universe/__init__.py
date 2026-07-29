@@ -56,3 +56,16 @@ def archive_dir() -> Path:
 
 def reports_dir() -> Path:
     return repo_root() / "reports" / "universe"
+
+
+def email_focus_path() -> Path:
+    """The PM/advisory email-audience file — independent of scope_status.
+
+    See ``research_commons/universe/email_focus.py`` for the merge logic
+    and ``update-email-focus`` in the CLI for the command that writes it.
+    """
+    return repo_root() / "data" / "email_focus_tickers.csv"
+
+
+def email_focus_update_dir() -> Path:
+    return repo_root() / "universe_update_xlsx_files"

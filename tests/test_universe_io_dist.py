@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from research_commons.universe import dist as dist_module
-from research_commons.universe.dist import Target, distribute
+from research_commons.universe.dist import Target, TargetResult, commit_instructions, distribute
 from research_commons.universe.io import (
     UniverseRow,
     read_canonical,
@@ -137,3 +137,20 @@ def test_failed_check_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     assert not results[0].ok
     assert not (first.path / "tickers.csv").exists()
+
+
+def test_commit_instructions_default_filename_is_tickers_csv(tmp_path: Path) -> None:
+    target = _target(tmp_path, "first")
+    results = [TargetResult(target=target, ok=True, message="wrote")]
+    text = commit_instructions(results, "a commit message")
+    assert "add tickers.csv" in text
+
+
+def test_commit_instructions_honors_explicit_filename(tmp_path: Path) -> None:
+    # Regression: the email-focus flow used to print "add tickers.csv" even
+    # though it had actually written email_focus_tickers.csv.
+    target = _target(tmp_path, "first")
+    results = [TargetResult(target=target, ok=True, message="wrote")]
+    text = commit_instructions(results, "a commit message", filename="email_focus_tickers.csv")
+    assert "add email_focus_tickers.csv" in text
+    assert "add tickers.csv" not in text
