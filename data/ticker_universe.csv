@@ -492,5 +492,5 @@ Xylem IncNY;US98419M1009;XYL UN Equity;XYL;Industrials;USD;XYL;inactive;2026-07-
 Yum China Holdings Inc;US98850P1093;YUMC UN Equity;YUMC;Consumer Discretionary;USD;YUMC;watchlist;2026-07-29;;
 Zoetis Inc;US98978V1035;ZTS UN Equity;ZTS;Health Care;USD;ZTS;inactive;2026-07-29;;
 Zscaler Inc;US98980G1022;ZS UW Equity;ZS;Information Technology;USD;ZS;watchlist;2026-07-29;;
-TSLA;;;TSLA;;U;TSLA;watchlist;2026-07-29;;seed: placeholder row (no ISIN) kept for FK'd history
-XOM;;;XOM;;U;XOM;watchlist;2026-07-29;;seed: placeholder row (no ISIN) kept for FK'd history
+TSLA;;;TSLA;Consumer Discretionary;U;TSLA;watchlist;2026-07-29;;seed: placeholder row (no ISIN) kept for FK'd history
+XOM;;;XOM;Energy;U;XOM;watchlist;2026-07-29;;seed: placeholder row (no ISIN) kept for FK'd history
