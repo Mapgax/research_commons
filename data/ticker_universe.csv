@@ -72,7 +72,7 @@ Medartis Holding AG;CH0386200239;MED SE Equity;MED;Health Care;CHF;MED.SW;active
 SIKA;CH0418792922;SIKA SW Equity;SIKA;Materials;CHF;SIKA.SW;inactive;2026-07-29;;
 Alcon;CH0432492467;ALC SW Equity;ALC;Health Care;CHF;ALC.SW;active;2026-07-29;;
 SIG Combibloc Group AG;CH0435377954;SIGN SE Equity;SIGN;Materials;CHF;SIGN.SW;active;2026-07-29;;
-Helvetia Holding AG;CH0466642201;HELN SE Equity;HELN;Financials;CHF;HELN.SW;inactive;2026-07-29;;
+Helvetia Holding AG;CH0466642201;HELN SE Equity;HBAN;Financials;CHF;HBAN.SW;inactive;2026-07-29;;
 Softwareone Holding AG;CH0496451508;SWON SE Equity;SWON;Information Technology;CHF;SWON.SW;watchlist;2026-07-29;;
 Belimo Holding AG;CH1101098163;BEAN SE Equity;BEAN;Industrials;CHF;BEAN.SW;active;2026-07-29;;
 ON HOLDING AG-CLASS A;CH1134540470;ONON US Equity;ONON;Consumer Discretionary;USD;ONON;watchlist;2026-07-29;;
@@ -158,7 +158,7 @@ Stora Enso Oyj;FI0009005961;STERV FH Equity;STERV;Materials;EUR;STERV.HE;watchli
 UPM-Kymmene Oyj;FI0009005987;UPM FH Equity;UPM;Materials;EUR;UPM.HE;watchlist;2026-07-29;;
 Neste Oyj;FI0009013296;NESTE FH Equity;NESTE;Energy;EUR;NESTE.HE;watchlist;2026-07-29;;
 Kone OYJ-B;FI0009013403;KNEBV FH Equity;KNEBV;Industrials;EUR;KNEBV.HE;watchlist;2026-07-29;;
-Nordea Bank Abp;FI4000297767;NDA SS Equity;NDA;Financials;SEK;NDA.ST;inactive;2026-07-29;;
+Nordea Bank Abp;FI4000297767;NDA SS Equity;NDA;Financials;SEK;NDA-SE.ST;inactive;2026-07-29;;
 Sopra Steria Group;FR0000050809;SOP FP Equity;SOP;Information Technology;EUR;SOP.PA;watchlist;2026-07-29;;
 Hermes International;FR0000052292;RMS FP Equity;RMS;Consumer Discretionary;EUR;RMS.PA;active;2026-07-29;;
 Ubisoft Entertainment SA;FR0000054470;UBI FP Equity;UBI;Communication Services;EUR;UBI.PA;watchlist;2026-07-29;;
@@ -458,7 +458,7 @@ ServiceNow Inc;US81762P1021;NOW UN Equity;NOW;Information Technology;USD;NOW;wat
 Sociedad Quimica y Minera de Chile Spons ADR;US8336351056;SQM US Equity;SQM;Materials;USD;SQM;watchlist;2026-07-29;;
 Southern Co The;US8425871071;SO UN Equity;SO;Utilities;USD;SO;watchlist;2026-07-29;;
 Splunk Inc;US8486371045;SPLK UW Equity;SPLK;Information Technology;USD;SPLK;watchlist;2026-07-29;;
-Square Inc;US8522341036;SQ UN Equity;SQ;Financials;USD;SQ;inactive;2026-07-29;;
+Square Inc;US8522341036;SQ UN Equity;XYZ;Financials;USD;XYZ;inactive;2026-07-29;;
 Starbucks Corp;US8552441094;SBUX US Equity;SBUX;Consumer Discretionary;USD;SBUX;watchlist;2026-07-29;;
 Synopsys Inc;US8716071076;SNPS UW Equity;SNPS;Information Technology;USD;SNPS;active;2026-07-29;;
 TJX Cos IncThe;US8725401090;TJX UN Equity;TJX;Consumer Discretionary;USD;TJX;watchlist;2026-07-29;;
