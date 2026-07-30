@@ -20,3 +20,8 @@ name = "Companies_News"
 path = "/Users/andreas/Desktop/RBZ_Projects/Companies_News"
 remote = "Mapgax/Companies_News"
 email_focus = true
+
+[[target]]
+name = "risk_monitor"
+path = "/Users/andreas/Projects/AI/risk_monitor"
+remote = "Mapgax/risk_monitor"
