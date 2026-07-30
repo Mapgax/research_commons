@@ -44,6 +44,15 @@ Two Aiven Postgres databases: **`market`** (prices, fundamentals, features,
   place those maps live; per-project copies were removed in July 2026.
 - `research_commons/source_health/` — independent homepage monitor.
 - `migrations/market/*.sql`, `migrations/news/*.sql` — the only schema source.
+- `reports/ticker_universe_report.py` — read-only Streamlit dashboard: ticker
+  metadata (scope_status, sector, email-focus flags) joined against per-table
+  row counts/date ranges (prices, fundamentals, features, alt_data,
+  insider_transactions, option_metrics), plus a data-quality alerts tab
+  (zero rows, below the 60-row feature-engineering minimum, stale prices,
+  missing features). Not a package dependency — streamlit stays out of
+  `pyproject.toml`; install it separately if missing. Launch via
+  `reports/Launch Ticker Universe Report.command` (double-click in Finder) or
+  the Runbook command below.
 
 ## Runbook
 
@@ -64,6 +73,10 @@ python3 -c "import research_commons; research_commons.init_news_db()"
 
 # source health monitor
 python3 -m research_commons.source_health --skip-email
+
+# ticker universe coverage & freshness report (Streamlit; needs `pip install streamlit`)
+streamlit run reports/ticker_universe_report.py
+# or just double-click reports/Launch Ticker Universe Report.command
 ```
 
 Env vars must be exported before DB commands (`set -a && source .env && set +a`).
