@@ -100,7 +100,16 @@ Rules that must not be broken:
 - **This tool is the only writer to `market.ticker_metadata`.** MSARN's
   `sync_registry_metadata()` was reduced to a read-only drift check, and
   `ticker_metadata` was removed from its `MARKET_TABLE_MIGRATION_COLUMNS` map, so no
-  second schema manager patches that table. Don't reintroduce either.
+  second schema manager patches that table. Don't reintroduce either. **Convention
+  only, not DB-enforced**: every consumer connects as `avnadmin`, which owns every
+  table (owners bypass GRANT/REVOKE), and `db_market`/`db_news` `get_connection()`
+  is shared indiscriminately between reads and writes — e.g. Companies_News writes
+  its source registry and LLM classifications through the same function a read call
+  would use. `sector_reader` has real SELECT-only grants on both DBs (2026-07-30)
+  and `MARKET_ROLE`/`NEWS_ROLE` will `SET ROLE` to it when set, but do **not** set
+  either in a real consumer `.env` — it would silently break every write on that
+  connection. Actual enforcement needs a distinct read-only entrypoint (or
+  per-callsite role switching), not a blanket env var; that's unbuilt.
 - Ingest is **plan-only by default**; `--apply` writes (and, unless `--no-push`
   is passed, pushes). Quarantined issues are never merged silently.
 - Merge key is **ISIN**, never the ticker. An existing row's ticker changes only via

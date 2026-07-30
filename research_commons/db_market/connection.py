@@ -81,11 +81,24 @@ def get_connection() -> Iterator[psycopg2.extensions.connection]:
     immediately after connecting (Postgres role-switching, not a new login —
     the connecting user must already be a member of that role). This is
     opt-in and currently a no-op in production: ``MARKET_ROLE`` is unset
-    everywhere today, and the one role that exists for this
-    (``sector_reader``) has zero GRANTs on any table, so switching to it
-    without first granting SELECT on every table a consumer needs would
-    break every read. Provisioning that role is a deliberate follow-up, not
-    something this connection helper does on its own.
+    everywhere today.
+
+    ``sector_reader`` (2026-07-30: granted SELECT on all tables + default
+    privileges for future ones, both databases) is a genuinely usable
+    read-only role now, but do NOT set ``MARKET_ROLE=sector_reader`` in any
+    consumer's real environment yet: this function is used indiscriminately
+    for both reads and writes (e.g. Companies_News's news_db_sync.py writes
+    the source registry and LLM classifications through the exact same
+    get_connection() a read call would use), and switching the role
+    process-wide would silently break every write on that connection —
+    confirmed by reading actual call sites, not assumed. Real enforcement of
+    "only research_commons.universe writes ticker_metadata" needs either a
+    distinct read-only entrypoint callers opt into at genuinely read-only
+    call sites, or per-callsite role switching — not a single blanket env
+    var, given every consumer already connects as ``avnadmin``, which OWNS
+    every table (table owners bypass GRANT/REVOKE entirely in Postgres, so
+    REVOKEing ticker_metadata writes from avnadmin directly wouldn't work
+    either).
     """
     pool = get_pool()
     conn = pool.getconn()

@@ -55,8 +55,13 @@ def get_connection() -> Iterator[psycopg2.extensions.connection]:
 
     If ``NEWS_ROLE`` is set, every connection issues ``SET ROLE`` to it
     immediately after connecting (see ``db_market.connection.get_connection``
-    for the full rationale — this mirrors it exactly). Opt-in and currently a
-    no-op: ``NEWS_ROLE`` is unset everywhere today.
+    for the full rationale — this mirrors it exactly, including why setting
+    it in a real consumer environment today would break real writes: e.g.
+    Companies_News's news_db_sync.py writes the source registry and LLM
+    classifications through this exact same get_connection()). Opt-in and
+    currently a no-op: ``NEWS_ROLE`` is unset everywhere today. ``sector_reader``
+    (same role name, cluster-wide) has real SELECT grants on news_db too as
+    of 2026-07-30.
     """
     pool = get_pool()
     conn = pool.getconn()
