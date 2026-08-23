@@ -139,7 +139,7 @@ ROCKWOOL International AS;DK0010219153;ROCKB DC Equity;ROCKB;Industrials;DKK;ROC
 DSV PANALPINA AS;DK0060079531;DSV DC Equity;DSV;Industrials;DKK;DSV.CO;inactive;2026-07-29;;
 Orsted AS;DK0060094928;ORSTED DC Equity;ORSTED;Utilities;DKK;ORSTED.CO;inactive;2026-07-29;;
 Pandora AS;DK0060252690;PNDORA DC Equity;PNDORA;Consumer Discretionary;DKK;PNDORA.CO;inactive;2026-07-29;;
-Novozymes AS;DK0060336014;NZYMB DC Equity;NZYMB;Materials;DKK;NZYMB.CO;watchlist;2026-07-29;DK0060277782;ISIN change applied 2026-07-29 (universe update)
+Novozymes AS;DK0060336014;NZYMB DC Equity;NZYMB;Materials;DKK;NSIS-B.CO;watchlist;2026-07-29;DK0060277782;ISIN change applied 2026-07-29 (universe update), yahoo_symbol corrected 2026-08-23 (NZYMB.CO 404s post Novozymes/Chr. Hansen merger into Novonesis, completed 2024-01-29 - Bloomberg ticker/ISIN unchanged, Yahoo relisted under NSIS-B.CO)
 Demant AS;DK0060738599;DEMANT DC Equity;DEMANT;Health Care;DKK;DEMANT.CO;inactive;2026-07-29;;
 VESTAS WIND SYSTEMS A/S;DK0061539921;VWS DC Equity;VWS;Industrials;DKK;VWS.CO;inactive;2026-07-29;;
 NOVO NORDISK A/S-B;DK0062498333;NOVOB DC Equity;NOVOB;Health Care;DKK;NOVO-B.CO;inactive;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)

@@ -110,6 +110,12 @@ YAHOO_TICKER_OVERRIDES: dict[str, str] = {
     "LHN": "HOLN.SW",
     "NIBEB": "NIBE-B.ST",
     "NOVOB": "NOVO-B.CO",
+    # Novozymes B-shares (Bloomberg still lists "NZYMB DC Equity" unchanged;
+    # ISIN DK0060336014 unchanged too) but Yahoo relisted the quote under the
+    # Novonesis name after the Novozymes/Chr. Hansen merger completed
+    # 2024-01-29 — the old NZYMB.CO/NZYMB symbols 404 now. Confirmed live via
+    # query1.finance.yahoo.com/v8/finance/chart 2026-08-23.
+    "NZYMB": "NSIS-B.CO",
     "ROCKB": "ROCK-B.CO",
     "SCAA": "SCA-A.ST",
     "SCAB": "SCA-B.ST",
