@@ -42,6 +42,10 @@ Two Aiven Postgres databases: **`market`** (prices, fundamentals, features,
 - `research_commons/tickers.py` — canonical registry API + the consolidated
   Bloomberg→Yahoo / Bloomberg→currency maps and manual overrides. This is the **one**
   place those maps live; per-project copies were removed in July 2026.
+- `docs/UNIVERSE_DICTIONARY.md` — field-by-field dictionary for both canonical
+  universe files (`ticker_universe.csv`, `email_focus_tickers.csv`): what each
+  column means, who writes it, what each `scope_status` tier actually costs and
+  gets, and an amendment log. Read this before changing a tier or an audience flag.
 - `research_commons/scope_policy.py` — the `stage -> scope_status tiers` table
   (`scopes_for`, `includes`, `stages_for`). Pure: no DB, no pandas, no I/O,
   because consumer runtime is CSV-authoritative. The one definition of which
@@ -146,7 +150,7 @@ Rules that must not be broken:
     `inactive`.
   - `inactive` — prices, fundamentals, features, alt-data, options and news, all
     on the same cadence as `active`; never scored. This is the bulk of the
-    universe (415 of 496).
+    universe.
   - `watchlist` — prices and fundamentals only, on the recurring cadence:
     quant-analysable for equity research, but no features, alt-data, options or
     news. Cheap to hold, instant to promote.
