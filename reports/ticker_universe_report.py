@@ -29,6 +29,7 @@ import pandas as pd
 import streamlit as st
 
 from research_commons.db_market.connection import get_connection
+from research_commons.scope_policy import scopes_for
 from research_commons.universe import email_focus_path
 from research_commons.universe.email_focus import read_email_focus
 
@@ -167,15 +168,20 @@ def main() -> None:
         ]
 
     # ── Data-quality flags (drives both the alerts tab and KPI row) ────────
+    # Two different expectations, because the tiers get different pipelines
+    # (research_commons.scope_policy): every tier gets prices, so price gaps and
+    # staleness are an alert for watchlist too. Features are covered-only, so a
+    # watchlist name with no feature rows is correct, not a defect.
     price_rows = filtered.get("prices_rows", pd.Series(dtype=float)).fillna(0)
     price_stale = filtered.get("prices_stale_days", pd.Series(dtype=float))
-    covered = filtered["scope_status"].isin(["active", "inactive"])
+    priced = filtered["scope_status"].isin(scopes_for("prices"))
+    featured = filtered["scope_status"].isin(scopes_for("features"))
 
     filtered = filtered.assign(
-        issue_zero_prices=covered & (price_rows == 0),
-        issue_below_min_history=covered & (price_rows > 0) & (price_rows < MIN_PRICE_ROWS_FOR_FEATURES),
-        issue_stale_prices=covered & price_stale.gt(stale_threshold).fillna(False),
-        issue_missing_features=covered & (price_rows >= MIN_PRICE_ROWS_FOR_FEATURES)
+        issue_zero_prices=priced & (price_rows == 0),
+        issue_below_min_history=featured & (price_rows > 0) & (price_rows < MIN_PRICE_ROWS_FOR_FEATURES),
+        issue_stale_prices=priced & price_stale.gt(stale_threshold).fillna(False),
+        issue_missing_features=featured & (price_rows >= MIN_PRICE_ROWS_FOR_FEATURES)
         & (filtered.get("features_rows", pd.Series(dtype=float)).fillna(0) == 0),
     )
     filtered["has_issue"] = filtered[
@@ -223,7 +229,10 @@ def main() -> None:
 
     with tab_alerts:
         st.caption(
-            f"Covered tickers (active/inactive) only. Stale threshold: {stale_threshold} days. "
+            f"Price gaps/staleness are flagged for every tier (all three get prices); "
+            f"min-history and missing-features only for covered tickers (active/inactive), "
+            f"since watchlist names are not feature-engineered by design. "
+            f"Stale threshold: {stale_threshold} days. "
             f"Min-history threshold: {MIN_PRICE_ROWS_FOR_FEATURES} price rows (MSARN feature-engineering floor)."
         )
         alert_cols = [

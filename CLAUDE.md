@@ -42,6 +42,10 @@ Two Aiven Postgres databases: **`market`** (prices, fundamentals, features,
 - `research_commons/tickers.py` — canonical registry API + the consolidated
   Bloomberg→Yahoo / Bloomberg→currency maps and manual overrides. This is the **one**
   place those maps live; per-project copies were removed in July 2026.
+- `research_commons/scope_policy.py` — the `stage -> scope_status tiers` table
+  (`scopes_for`, `includes`, `stages_for`). Pure: no DB, no pandas, no I/O,
+  because consumer runtime is CSV-authoritative. The one definition of which
+  pipeline stages run for which tier — see the coverage rules below.
 - `research_commons/source_health/` — independent homepage monitor.
 - `migrations/market/*.sql`, `migrations/news/*.sql` — the only schema source.
 - `reports/ticker_universe_report.py` — read-only Streamlit dashboard: ticker
@@ -132,10 +136,21 @@ Rules that must not be broken:
 - **Currency is never auto-refreshed.** Upload files carry `DenCurrency`, a
   *denomination* currency that is frequently wrong about the trading currency
   (EUR for LSE names, USD for Hong Kong lines). Mismatches are reported, not applied.
-- `scope_status` is the single **coverage** dial: `active` (collected, features
-  computed, default training/dashboard scope), `inactive` (collected only),
-  `watchlist` (metadata only, no automatic backfill). It does **not** govern
-  email delivery — see the email-focus workflow below.
+- `scope_status` is the single **coverage** dial, and
+  `research_commons/scope_policy.py` is the single place its meaning is defined —
+  a `stage -> tiers` table plus `scopes_for()` / `includes()`. Consumers must
+  import that meaning, not restate it; before 2026-08-23 the rule was duplicated
+  in six places across the three repos and drifted from the docs.
+  - `active` — everything, **plus** model scoring (MSARN's daily `SCOPE_FOCUS`
+    overview merge). Scoring is the *only* stage that distinguishes it from
+    `inactive`.
+  - `inactive` — prices, fundamentals, features, alt-data, options and news, all
+    on the same cadence as `active`; never scored. This is the bulk of the
+    universe (415 of 496).
+  - `watchlist` — prices and fundamentals only, on the recurring cadence:
+    quant-analysable for equity research, but no features, alt-data, options or
+    news. Cheap to hold, instant to promote.
+  It does **not** govern email delivery — see the email-focus workflow below.
 - The CLI refuses to run from an installed copy — `data/` and `reports/` are repo-root
   artifacts, deliberately outside the package.
 
