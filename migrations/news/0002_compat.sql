@@ -77,7 +77,13 @@ CREATE TABLE IF NOT EXISTS briefing_sent_items (
 CREATE INDEX IF NOT EXISTS idx_briefing_sent_ticker  ON briefing_sent_items (ticker);
 CREATE INDEX IF NOT EXISTS idx_briefing_sent_sent_at ON briefing_sent_items (sent_at DESC);
 
--- manual_research_documents: ingested email/PDF/file documents
+-- manual_research_documents: ingested email/PDF/file documents.
+-- OWNED BY Companies_News (manual_research.py::ensure_manual_research_tables).
+-- The columns below are the subset this migration seeds; the consumer's own
+-- DDL adds the rest, and 0007 repairs databases where this block ran first and
+-- won the CREATE TABLE IF NOT EXISTS race. Do NOT add or change a column here
+-- without making the same change there — that divergence is what broke the
+-- 2026-08-27 briefing's manual-research section.
 CREATE TABLE IF NOT EXISTS manual_research_documents (
     id           BIGSERIAL PRIMARY KEY,
     file_hash    TEXT NOT NULL UNIQUE,
@@ -92,7 +98,10 @@ CREATE TABLE IF NOT EXISTS manual_research_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_manres_docs_processed ON manual_research_documents (processed_at DESC);
 
--- manual_research_items: structured items extracted from documents
+-- manual_research_items: structured items extracted from documents.
+-- OWNED BY Companies_News — see the note above manual_research_documents.
+-- `ticker` and `content` are deliberately left nullable by 0007: the consumer
+-- stores macro items (no ticker) and writes summary/evidence, never content.
 CREATE TABLE IF NOT EXISTS manual_research_items (
     id              BIGSERIAL PRIMARY KEY,
     document_id     BIGINT NOT NULL REFERENCES manual_research_documents(id) ON DELETE CASCADE,
