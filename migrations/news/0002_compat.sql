@@ -116,7 +116,10 @@ CREATE TABLE IF NOT EXISTS manual_research_items (
 );
 CREATE INDEX IF NOT EXISTS idx_manres_items_ticker ON manual_research_items (ticker);
 
--- briefing_email_archive: full HTML archive of sent briefings
+-- briefing_email_archive: full HTML archive of sent briefings.
+-- OWNED BY Companies_News (manual_research.py::ensure_briefing_email_archive_table).
+-- 0008 reconciles the two definitions; keep them in step or the consumer's
+-- INSERT starts naming columns that do not exist here, silently.
 CREATE TABLE IF NOT EXISTS briefing_email_archive (
     id           BIGSERIAL PRIMARY KEY,
     sent_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
