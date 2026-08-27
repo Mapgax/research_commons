@@ -14,6 +14,23 @@ research-commons @ git+https://github.com/mapgax/research_commons.git@main
 There is no staging branch and no deploy pipeline for this repo — the push *is* the
 release. Consumers pick it up on their next install/build (Railway rebuild, GHA run).
 
+⚠️ **"Immediately" is not automatic — a rebuild is not enough.** `@main` is
+resolved by pip at *build* time, so a cached build layer leaves a consumer
+running current app code against a stale copy of this library. That is exactly
+what broke the 2026-08-27 Companies_News briefing: the container had rebuilt
+(new app code, new `tickers.csv`) but still carried a `research_commons` without
+`scope_policy`, and the swallowed ImportError shrank its universe to three
+names. **After adding anything a consumer imports, redeploy that consumer
+without build cache**, or force it:
+
+```bash
+pip install --upgrade --force-reinstall --no-deps 'research-commons @ git+https://github.com/mapgax/research_commons.git@main'
+```
+
+Adding a symbol is the dangerous direction: consumers written against it fail
+on the stale copy. Changing an existing symbol's behaviour propagates the same
+way but fails silently instead.
+
 ## Ecosystem map
 
 This repo lives at `~/Projects/AI/research_commons` — moved there from
@@ -27,6 +44,15 @@ from the new location or every `import research_commons` breaks.
 | MSARN | `~/Projects/AI/project_MSARN` (**not** under RBZ_Projects) | market DB connection, ticker registry via generated `tickers.csv` |
 | Companies_News | `~/Desktop/RBZ_Projects/Companies_News` | news DB reads/writes, LLM client, source registry |
 | Idee_Scraping | `~/Desktop/RBZ_Projects/Idee_Scraping` | news DB, `resolve_alias` / `upsert_ticker_alias` |
+| risk_monitor | `~/Projects/AI/risk_monitor` | **nothing** — it is a `distribute` target only |
+
+risk_monitor receives `tickers.csv` (it is in `universe_targets.toml`) but does
+**not** depend on this package, so it cannot import `scope_policy` and restates
+the tier rule locally in `scoring.py`, `app.py` and `research/run_markov_wf.py`.
+That is the one accepted exception to the "import, don't restate" rule below;
+adding the dependency for one lookup table has not been judged worth it. Its
+cadence happens to match (daily `active`, Saturday `covered`) — keep the two in
+step by hand.
 
 Idee_Scraping is **intentionally not** a `distribute` target and has no
 `tickers.csv` — its value is discovering companies outside any fixed list, so
@@ -142,19 +168,27 @@ Rules that must not be broken:
   (EUR for LSE names, USD for Hong Kong lines). Mismatches are reported, not applied.
 - `scope_status` is the single **coverage** dial, and
   `research_commons/scope_policy.py` is the single place its meaning is defined —
-  a `stage -> tiers` table plus `scopes_for()` / `includes()`. Consumers must
-  import that meaning, not restate it; before 2026-08-23 the rule was duplicated
-  in six places across the three repos and drifted from the docs.
-  - `active` — everything, **plus** model scoring (MSARN's daily `SCOPE_FOCUS`
-    overview merge). Scoring is the *only* stage that distinguishes it from
-    `inactive`.
+  a `stage -> tiers` table plus `scopes_for()` / `includes()`. Consumers that
+  depend on this package must import that meaning, not restate it; before
+  2026-08-23 the rule was duplicated in six places across the three repos and
+  drifted from the docs. risk_monitor is the documented exception — see the
+  ecosystem map above.
+  - `active` — everything, and scored **daily** (MSARN's `SCOPE_FOCUS` overview
+    merge, launchd 06:00; risk_monitor's 06:30 `active` run). Scoring *cadence*
+    is the only thing distinguishing it from `inactive`.
   - `inactive` — prices, fundamentals, features, alt-data, options and news, all
-    on the same cadence as `active`; never scored. This is the bulk of the
-    universe.
+    on the same cadence as `active`; scored only in the weekly `SCOPE_FULL`
+    rebuild (launchd Sundays 01:00), so its risk numbers can be a week old.
+    This is the bulk of the universe.
   - `watchlist` — prices and fundamentals only, on the recurring cadence:
     quant-analysable for equity research, but no features, alt-data, options or
     news. Cheap to hold, instant to promote.
-  It does **not** govern email delivery — see the email-focus workflow below.
+  Corrected 2026-08-27: this used to say `inactive` was "never scored", and
+  `scope_policy` had `scoring -> {active}`. MSARN's weekly full rebuild scores
+  the whole covered universe, so the table now carries two stages — `scoring`
+  (active + inactive) and `scoring_daily` (active only).
+  It does **not** govern email delivery — see the email-focus workflow below,
+  with the one exception recorded there.
 - The CLI refuses to run from an installed copy — `data/` and `reports/` are repo-root
   artifacts, deliberately outside the package.
 
@@ -186,6 +220,16 @@ convention today, but the file is the source of truth and the two can diverge.
 # every target flagged email_focus=true in universe_targets.toml
 python3 -m research_commons.universe update-email-focus [file] --apply
 ```
+
+**One invariant crosses the two dials**: an ISIN with `email_scope=1` must be
+`scope_status=active`. A name on the delivery list is one the desk is working,
+so its risk numbers have to be same-day fresh, and only `scoring_daily` runs
+every day. `update-email-focus` promotes violators as part of its plan (and, on
+`--apply`, writes `ticker_universe.csv`, the DB mirror and every consumer's
+`tickers.csv` alongside the audience file); `verify` reports them read-only and
+exits non-zero. More than `ACTIVATION_THRESHOLD` promotions needs `--yes`, the
+same cost gate `ingest` applies. Delivery still does not imply coverage in the
+other direction — an `active` ticker is not emailed unless it is flagged here.
 
 Plan-only by default (omit `--apply`). An ISIN that drops out of the latest
 upload isn't silently zeroed: the command prints its current values and asks

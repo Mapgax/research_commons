@@ -15,15 +15,24 @@ lookup must not require a database round-trip the way
 
 Scope tiers, in terms of what they actually gate:
 
-  - ``active``    — everything, plus model scoring (the daily overview merge).
-  - ``inactive``  — collected and feature-engineered, but never scored.
+  - ``active``    — everything, and scored on the DAILY cadence.
+  - ``inactive``  — everything active gets, but scored only on the weekly
+    cadence. Collection, features, alt-data, options and news are identical.
   - ``watchlist`` — prices and fundamentals only: quant-analysable, but no
     features, alt-data, options or news. Cheap to hold, instant to promote.
 
-Email delivery is deliberately **not** in this table. It is a genuinely
-independent axis owned by ``data/email_focus_tickers.csv`` — a ticker can be
-emailed regardless of its coverage tier, and being ``active`` does not imply
-delivery.
+Corrected 2026-08-27: this table used to say ``scoring`` was ``active``-only
+and that inactive was "never scored". MSARN actually scores the whole covered
+universe every Sunday (``data_export/overview.py`` SCOPE_FULL, launchd
+``full-refresh``) and only the daily merge (SCOPE_FOCUS) is active-only. The
+active/inactive line is a scoring *cadence*, not scoring at all — which is why
+there are two stages below rather than one.
+
+Email delivery is deliberately **not** in this table. It is a separate axis
+owned by ``data/email_focus_tickers.csv``, and being ``active`` does not imply
+delivery. There is one directed link the other way, enforced by
+``universe/email_focus.py`` rather than by this table: an emailed name must sit
+in a tier that scores daily. See docs/UNIVERSE_DICTIONARY.md, "The two axes".
 """
 
 from __future__ import annotations
@@ -47,9 +56,13 @@ STAGE_SCOPES: dict[str, frozenset[str]] = {
     "altdata": frozenset({ACTIVE, INACTIVE}),
     "options": frozenset({ACTIVE, INACTIVE}),
     "news": frozenset({ACTIVE, INACTIVE}),
-    # The one distinction active/inactive actually carries today: model
-    # inference and the fast daily overview merge.
-    "scoring": frozenset({ACTIVE}),
+    # Model inference. Every covered name is scored — the weekly SCOPE_FULL
+    # overview rebuild covers active + inactive alike.
+    "scoring": frozenset({ACTIVE, INACTIVE}),
+    # The one distinction active/inactive actually carries: the fast daily
+    # overview merge (SCOPE_FOCUS), which is what keeps a name's risk numbers
+    # same-day fresh instead of up-to-a-week old.
+    "scoring_daily": frozenset({ACTIVE}),
 }
 
 

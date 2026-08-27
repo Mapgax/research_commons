@@ -24,7 +24,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from research_commons.scope_policy import ACTIVE, normalize_scope, scopes_for
 from research_commons.universe.io import (
+    UniverseRow,
     _atomic_write,
     _read_csv_dicts,
     _read_xlsx_dicts,
@@ -186,3 +188,64 @@ def plan_email_focus_merge(
 
     result = [row for _, row in updated] + added + kept + zeroed
     return EmailFocusMergePlan(added=added, updated=updated, kept=kept, zeroed=zeroed, result=result)
+
+
+# ---------------------------------------------------------------------------
+# The one place delivery and coverage are *not* independent
+# ---------------------------------------------------------------------------
+# The two dials are deliberately separate (see the module docstring), with one
+# exception running the other way: a name on the delivery list is a name the
+# desk is actively working, so it belongs in the tier that gets the daily
+# refresh. Collection-wise an emailed inactive name would be fine — news,
+# features and enrichment are identical for both tiers — but its risk numbers
+# would be up to a week stale, since only ``scoring_daily`` runs every day.
+# Detection is taken from scope_policy rather than spelled "active" here, so it
+# follows the policy table if the daily cadence ever widens. The rule is
+# deliberately one-way and monotone: clearing email_scope never demotes a
+# name, because coverage has its own reasons to keep one active.
+DELIVERY_SCOPES = scopes_for("scoring_daily")
+
+
+def delivery_isins(rows: Iterable[EmailFocusRow]) -> set[str]:
+    """ISINs the briefing email is actually sent for (``email_scope=1``)."""
+    return {row.isin.strip().upper() for row in rows if row.email_scope == "1"}
+
+
+def delivery_scope_violations(
+    universe: Iterable[UniverseRow],
+    focus: Iterable[EmailFocusRow],
+) -> list[UniverseRow]:
+    """Universe rows that are emailed from a tier without a daily refresh."""
+    emailed = delivery_isins(focus)
+    return [
+        row
+        for row in universe
+        if row.isin.strip().upper() in emailed
+        and normalize_scope(row.scope_status) not in DELIVERY_SCOPES
+    ]
+
+
+def promote_delivery_scopes(
+    universe: list[UniverseRow],
+    focus: Iterable[EmailFocusRow],
+) -> tuple[list[UniverseRow], list[UniverseRow]]:
+    """Return ``(rows with every violation set to active, the rows changed)``.
+
+    Detection follows the policy table (``DELIVERY_SCOPES``); the repair targets
+    ``ACTIVE`` outright, because a set of acceptable tiers does not say which
+    one to write. If the daily cadence ever covers a second tier, revisit this
+    choice rather than assuming it still follows.
+
+    Always returns a new list, and rebuilds the offending rows rather than
+    mutating them, so a caller that plans before it writes still holds the
+    untouched originals to diff against.
+    """
+    offenders = {row.isin.strip().upper() for row in delivery_scope_violations(universe, focus)}
+    promoted: list[UniverseRow] = []
+    result: list[UniverseRow] = []
+    for row in universe:
+        if row.isin.strip().upper() in offenders:
+            row = replace(row, scope_status=ACTIVE)
+            promoted.append(row)
+        result.append(row)
+    return result, promoted

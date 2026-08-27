@@ -33,26 +33,26 @@ def test_watchlist_is_quant_ready_but_not_researched() -> None:
     assert not includes("scoring", WATCHLIST)
 
 
-def test_inactive_is_covered_but_never_scored() -> None:
-    for stage in ["prices", "fundamentals", "features", "altdata", "options", "news"]:
+def test_inactive_is_covered_and_scored_but_not_daily() -> None:
+    for stage in ["prices", "fundamentals", "features", "altdata", "options", "news", "scoring"]:
         assert includes(stage, INACTIVE), stage
-    assert not includes("scoring", INACTIVE)
+    assert not includes("scoring_daily", INACTIVE)
 
 
 def test_active_gets_every_stage() -> None:
     assert stages_for(ACTIVE) == frozenset(STAGE_SCOPES)
 
 
-def test_scoring_is_the_only_active_inactive_distinction() -> None:
+def test_scoring_cadence_is_the_only_active_inactive_distinction() -> None:
     """Guards the finding that motivated this module: active vs inactive earns
-    exactly one bit of policy today. If a second stage ever diverges, this test
-    should be updated deliberately, not by accident."""
+    exactly one bit of policy today — how often a name is scored, not whether.
+    If a second stage ever diverges, update this deliberately, not by accident."""
     diverging = {
         stage
         for stage in STAGE_SCOPES
         if includes(stage, ACTIVE) != includes(stage, INACTIVE)
     }
-    assert diverging == {"scoring"}
+    assert diverging == {"scoring_daily"}
 
 
 def test_every_stage_includes_active() -> None:

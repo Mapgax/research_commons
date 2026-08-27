@@ -34,6 +34,12 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from research_commons.universe.dist import TargetResult
+    from research_commons.universe.email_focus import EmailFocusRow
+    from research_commons.universe.io import UniverseRow
 
 # Guardrails: more activations/demotions than this require an explicit --yes.
 ACTIVATION_THRESHOLD = 20
@@ -64,19 +70,100 @@ def _parse_resolutions(pairs: list[str]) -> dict[str, str]:
     return resolutions
 
 
-def cmd_ingest(args: argparse.Namespace) -> int:
-    from research_commons.universe import (
-        archive_dir,
-        canonical_path,
-        ignore_path,
-        reports_dir,
-        targets_path,
-    )
+def _publish(
+    results: list[TargetResult], filename: str, summary: str, *, no_push: bool
+) -> bool:
+    """Commit and push *filename* in every written target; True if all landed.
+
+    ``--no-push`` prints the manual commands instead and reports success —
+    nothing was attempted, so nothing failed.
+    """
+    from research_commons.universe.dist import commit_instructions, push_targets
+
+    print()
+    if no_push:
+        print(commit_instructions(results, summary, filename=filename))
+        return True
+    for result in push_targets(results, filename, summary):
+        print(f"  {'✓' if result.pushed else '✗'} {result.target.name}: {result.push_message}")
+    # Every target, not just the written ones: an all-or-nothing distribute can
+    # hand back a set where nothing is ok, and "all zero of them pushed" must
+    # not read as success.
+    return all(r.pushed for r in results)
+
+
+def _apply_canonical(
+    rows: list[UniverseRow],
+    *,
+    current_rows: list[UniverseRow],
+) -> list[TargetResult] | None:
+    """Write *rows* everywhere the canonical universe is mirrored, or fail.
+
+    Order matters and is the same for every writer (``ingest``, and the
+    email-focus promotion): check the consumer repos and the DB schema BEFORE
+    touching anything, then canonical file -> DB mirror -> consumer tickers.csv.
+    Returns the distribution results, or None once it has reported the failure.
+    """
+    from research_commons.universe import canonical_path, targets_path
     from research_commons.universe.db import preflight_schema, sync_canonical_to_db
-    from research_commons.universe.dist import commit_instructions, distribute, load_targets
+    from research_commons.universe.dist import distribute, load_targets
+    from research_commons.universe.io import write_canonical
+
+    targets = load_targets(targets_path())
+    blocked = [r for r in distribute(targets, rows, apply=False, current_rows=current_rows) if not r.ok]
+    if blocked:
+        for result in blocked:
+            print(f"  ✗ {result.target.name}: {result.message}", file=sys.stderr)
+        _fail("distribution target check failed — nothing was written")
+        return None
+
+    schema_problems = preflight_schema()
+    if schema_problems:
+        for problem in schema_problems:
+            print(f"  ✗ {problem}", file=sys.stderr)
+        _fail(
+            "live DB schema does not match migration 0003 — run "
+            "python3 -c 'import research_commons; research_commons.init_market_db()'"
+        )
+        return None
+
+    write_canonical(canonical_path(), rows)
+    print(f"✓ canonical updated: {canonical_path()}")
+
+    # Everything past this point runs with the canonical file already updated,
+    # so every failure has to say how to get the DB and the repos back in line.
+    try:
+        count = sync_canonical_to_db(rows)
+        print(f"✓ DB mirror synced: {count} rows upserted into ticker_metadata")
+
+        target_results = distribute(targets, rows, apply=True, current_rows=current_rows)
+        for result in target_results:
+            print(f"  {'✓' if result.ok else '✗'} {result.target.name}: {result.message}")
+        if any(not result.ok for result in target_results):
+            failed = "; ".join(f"{r.target.name}: {r.message}" for r in target_results if not r.ok)
+            raise RuntimeError(f"distribution did not write: {failed}")
+    except Exception as exc:
+        traceback.print_exc()
+        print(
+            f"ERROR: apply failed after the canonical file was written: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        print(
+            "The canonical file is updated; the DB mirror and/or the consumer repos "
+            "are not.\nRecover with:\n"
+            "  python3 -m research_commons.universe sync-db\n"
+            "  python3 -m research_commons.universe distribute --apply",
+            file=sys.stderr,
+        )
+        return None
+    return target_results
+
+
+def cmd_ingest(args: argparse.Namespace) -> int:
+    from research_commons.universe import archive_dir, canonical_path, ignore_path, reports_dir
     from research_commons.universe.io import read_canonical, read_ignore_list, read_update_file
     from research_commons.universe.merge import plan_focus_merge, plan_universe_merge
-    from research_commons.universe.io import write_canonical
     from research_commons.universe.report import render_report
 
     source = Path(args.file).expanduser()
@@ -148,56 +235,8 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             "if this focus file is really complete, re-run with --yes."
         )
 
-    # Check distribution targets BEFORE writing anything.
-    targets = load_targets(targets_path())
-    target_results = distribute(targets, plan.result, apply=False, current_rows=canonical)
-    blocked = [r for r in target_results if not r.ok]
-    if blocked:
-        for result in blocked:
-            print(f"  ✗ {result.target.name}: {result.message}", file=sys.stderr)
-        return _fail("distribution target check failed — nothing was written")
-
-    schema_problems = preflight_schema()
-    if schema_problems:
-        for problem in schema_problems:
-            print(f"  ✗ {problem}", file=sys.stderr)
-        return _fail(
-            "live DB schema does not match migration 0003 — run "
-            "python3 -c 'import research_commons; research_commons.init_market_db()'"
-        )
-
-    # ---- apply -------------------------------------------------------------
-    write_canonical(canonical_path(), plan.result)
-    print(f"✓ canonical updated: {canonical_path()}")
-
-    # Everything past this point runs with the canonical file already updated,
-    # so every failure has to say how to get the DB and the repos back in line.
-    try:
-        count = sync_canonical_to_db(plan.result)
-        print(f"✓ DB mirror synced: {count} rows upserted into ticker_metadata")
-
-        target_results = distribute(targets, plan.result, apply=True, current_rows=canonical)
-        for result in target_results:
-            print(f"  {'✓' if result.ok else '✗'} {result.target.name}: {result.message}")
-        if any(not result.ok for result in target_results):
-            failed = "; ".join(
-                f"{r.target.name}: {r.message}" for r in target_results if not r.ok
-            )
-            raise RuntimeError(f"distribution did not write: {failed}")
-    except Exception as exc:
-        traceback.print_exc()
-        print(
-            f"ERROR: apply failed after the canonical file was written: "
-            f"{type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        print(
-            "The canonical file is updated; the DB mirror and/or the consumer repos "
-            "are not.\nRecover with:\n"
-            "  python3 -m research_commons.universe sync-db\n"
-            "  python3 -m research_commons.universe distribute --apply",
-            file=sys.stderr,
-        )
+    target_results = _apply_canonical(plan.result, current_rows=canonical)
+    if target_results is None:
         return 1
 
     stamp = now.strftime("%H%M%S")
@@ -224,20 +263,12 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         )
     print()
     print(f"research_commons commit: {summary!r}")
-    if args.no_push:
-        print(commit_instructions(target_results, summary))
-    else:
-        from research_commons.universe.dist import push_targets
-        target_results = push_targets(target_results, "tickers.csv", summary)
-        for result in target_results:
-            marker = "✓" if result.pushed else "✗"
-            print(f"  {marker} {result.target.name}: {result.push_message}")
-        if any(not r.pushed for r in target_results):
-            print(
-                "\nSome targets did not push automatically — see messages above "
-                "and push manually where needed.",
-                file=sys.stderr,
-            )
+    if not _publish(target_results, "tickers.csv", summary, no_push=args.no_push):
+        print(
+            "\nSome targets did not push automatically — see messages above "
+            "and push manually where needed.",
+            file=sys.stderr,
+        )
     if plan.quarantined:
         print()
         print(
@@ -245,6 +276,18 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             f"see {report_path.name}."
         )
     return 0
+
+
+def _report_delivery_scope_violations(canonical: list[UniverseRow]) -> list[UniverseRow]:
+    """Print any emailed-but-unscored names and return them."""
+    from research_commons.universe import email_focus_path
+    from research_commons.universe.email_focus import delivery_scope_violations, read_email_focus
+
+    violations = delivery_scope_violations(canonical, read_email_focus(email_focus_path()))
+    for row in violations:
+        print(f"  ✗ {row.ticker} ({row.isin}) {row.company_name}: "
+              f"email_scope=1 but scope_status={row.scope_status}")
+    return violations
 
 
 def cmd_verify(_args: argparse.Namespace) -> int:
@@ -258,10 +301,18 @@ def cmd_verify(_args: argparse.Namespace) -> int:
             print(f"  ✗ schema: {problem}", file=sys.stderr)
         return 1
 
-    report = drift_check(read_canonical(canonical_path()))
+    canonical = read_canonical(canonical_path())
+    violations = _report_delivery_scope_violations(canonical)
+    if violations:
+        print(
+            f"{len(violations)} emailed name(s) are not active — their risk numbers "
+            "refresh weekly, not daily. Fix with update-email-focus --apply."
+        )
+
+    report = drift_check(canonical)
     if report.clean:
         print("✓ canonical universe and ticker_metadata are in sync")
-        return 0
+        return 1 if violations else 0
     for ticker in report.missing_in_db:
         print(f"  ✗ missing in DB: {ticker}")
     for ticker in report.extra_in_db:
@@ -296,7 +347,7 @@ def cmd_sync_db(_args: argparse.Namespace) -> int:
 
 def cmd_distribute(args: argparse.Namespace) -> int:
     from research_commons.universe import canonical_path, targets_path
-    from research_commons.universe.dist import commit_instructions, distribute, load_targets, push_targets
+    from research_commons.universe.dist import distribute, load_targets
     from research_commons.universe.io import read_canonical
 
     rows = read_canonical(canonical_path())
@@ -313,23 +364,13 @@ def cmd_distribute(args: argparse.Namespace) -> int:
         print("Plan only — pass --apply to write the files.")
         return 0
     summary = "universe: refresh tickers.csv from canonical"
-    print()
-    if args.no_push:
-        print(commit_instructions(results, summary))
-    else:
-        results = push_targets(results, "tickers.csv", summary)
-        for result in results:
-            marker = "✓" if result.pushed else "✗"
-            print(f"  {marker} {result.target.name}: {result.push_message}")
-        if any(not r.pushed for r in results):
-            return 1
-    return 0
+    return 0 if _publish(results, "tickers.csv", summary, no_push=args.no_push) else 1
 
 
 def cmd_rename_ticker(args: argparse.Namespace) -> int:
     from research_commons.universe import canonical_path, targets_path
     from research_commons.universe.db import preflight_schema
-    from research_commons.universe.dist import commit_instructions, distribute, load_targets
+    from research_commons.universe.dist import distribute, load_targets
     from research_commons.universe.io import read_canonical, write_canonical
 
     old = args.old.strip().upper()
@@ -379,21 +420,17 @@ def cmd_rename_ticker(args: argparse.Namespace) -> int:
     for result in results:
         marker = "✓" if result.ok else "✗"
         print(f"  {marker} {result.target.name}: {result.message}")
+    if any(not result.ok for result in results):
+        return _fail(
+            f"the DB and canonical file now say {new}, but no consumer repo was "
+            f"written — they still request {old} against renamed history. "
+            "Fix the targets above, then: distribute --apply"
+        )
     summary = f"universe: rename {old} -> {new}"
-    if args.no_push:
-        print(commit_instructions(results, summary))
-    else:
-        from research_commons.universe.dist import push_targets
-        results = push_targets(results, "tickers.csv", summary)
-        for result in results:
-            marker = "✓" if result.pushed else "✗"
-            print(f"  {marker} {result.target.name}: {result.push_message}")
-        if any(not r.pushed for r in results):
-            return 1
-    return 0
+    return 0 if _publish(results, "tickers.csv", summary, no_push=args.no_push) else 1
 
 
-def _interactive_resolve_removed(row) -> bool:
+def _interactive_resolve_removed(row: EmailFocusRow) -> bool:
     """Prompt for an ISIN that dropped out of the latest email-focus upload.
 
     Defaults to "keep" (the least destructive answer) when stdin isn't a
@@ -425,15 +462,17 @@ def _interactive_resolve_removed(row) -> bool:
 
 def cmd_update_email_focus(args: argparse.Namespace) -> int:
     from research_commons.universe import canonical_path, email_focus_path, email_focus_update_dir, targets_path
-    from research_commons.universe.dist import commit_instructions, distribute_email_focus, load_targets
+    from research_commons.universe.dist import distribute_email_focus, load_targets
     from research_commons.universe.email_focus import (
         latest_update_file,
         plan_email_focus_merge,
+        promote_delivery_scopes,
         read_email_focus,
         read_email_focus_upload,
         write_email_focus,
         _rows_to_csv,
     )
+    from research_commons.universe.io import read_canonical
 
     if args.file:
         source = Path(args.file).expanduser()
@@ -463,35 +502,86 @@ def cmd_update_email_focus(args: argparse.Namespace) -> int:
     print(f"Kept (removed from upload, pm/email unchanged, advisory->0): {len(plan.kept)}")
     print(f"Zeroed (removed from upload, all flags->0): {len(plan.zeroed)}")
 
+    # Delivery and coverage are independent dials in every direction but one:
+    # an emailed name is one the desk is working, so it must sit in the tier
+    # that scores daily. Promote here rather than only reporting, so the
+    # audience file can never leave the universe in a stale-numbers state.
+    canonical = read_canonical(canonical_path())
+    promoted_result, promoted = promote_delivery_scopes(canonical, plan.result)
+    print(f"Promoted to active (email_scope=1, was not active): {len(promoted)}")
+    for row in promoted:
+        print(f"  → {row.ticker} ({row.isin}) {row.company_name}")
+
     if not args.apply:
         print("\nPlan only — nothing written. Re-run with --apply to execute.")
         return 0
 
-    write_email_focus(email_focus_path(), plan.result)
-    print(f"✓ {email_focus_path()} updated ({len(plan.result)} rows)")
+    # Same cost gate ingest applies: entering active buys daily scoring.
+    if len(promoted) > ACTIVATION_THRESHOLD and not args.yes:
+        return _fail(
+            f"{len(promoted)} names would be promoted to active "
+            f"(> {ACTIVATION_THRESHOLD}); re-run with --yes to confirm the cost."
+        )
 
+    # Check the audience targets before the promotion writes anything, the same
+    # way _apply_canonical hoists its own target check — otherwise a repo with a
+    # hand-edited email_focus_tickers.csv aborts us with the universe already
+    # rewritten in four repos and no way to tell from the error.
     targets = load_targets(targets_path())
     content = _rows_to_csv(plan.result)
+    blocked = [r for r in distribute_email_focus(targets, content, apply=False) if not r.ok]
+    if blocked:
+        for result in blocked:
+            print(f"  ✗ {result.target.name}: {result.message}", file=sys.stderr)
+        return _fail("email-focus target check failed — nothing was written")
+
+    universe_results = None
+    if promoted:
+        universe_results = _apply_canonical(promoted_result, current_rows=canonical)
+        if universe_results is None:
+            return _fail("universe promotion failed — email-focus file left unchanged")
+
+    try:
+        write_email_focus(email_focus_path(), plan.result)
+    except OSError as exc:
+        if universe_results is not None:
+            print(
+                f"NOTE: the {len(promoted)} promotion(s) above are already written and "
+                "unpushed. Publish them with: distribute --apply",
+                file=sys.stderr,
+            )
+        return _fail(f"could not write {email_focus_path()}: {exc}")
+    print(f"✓ {email_focus_path()} updated ({len(plan.result)} rows)")
+
     results = distribute_email_focus(targets, content, apply=True)
     for result in results:
         marker = "✓" if result.ok else "✗"
         print(f"  {marker} {result.target.name}: {result.message}")
     if any(not r.ok for r in results):
+        if universe_results is not None:
+            # Pre-checked above, so reaching here means the repos changed under
+            # us mid-run. The promotion is already written and unpushed; say so,
+            # or the next run re-plans against a universe it thinks is unchanged.
+            print(
+                f"NOTE: the {len(promoted)} promotion(s) above are already written and "
+                "unpushed. Publish them with: distribute --apply",
+                file=sys.stderr,
+            )
         return _fail("email-focus distribution did not write to every target")
 
-    summary = "universe: update email_focus_tickers.csv"
-    print()
-    if args.no_push:
-        print(commit_instructions(results, summary, filename="email_focus_tickers.csv"))
-    else:
-        from research_commons.universe.dist import push_targets
-        results = push_targets(results, "email_focus_tickers.csv", summary)
-        for result in results:
-            marker = "✓" if result.pushed else "✗"
-            print(f"  {marker} {result.target.name}: {result.push_message}")
-        if any(not r.pushed for r in results):
-            return 1
-    return 0
+    # Both publishes always run: the audience file is what this command exists
+    # to deliver, so a failed universe push must not skip it.
+    universe_ok = universe_results is None or _publish(
+        universe_results,
+        "tickers.csv",
+        f"universe: activate {len(promoted)} emailed name(s) (email_scope=1)",
+        no_push=args.no_push,
+    )
+    focus_ok = _publish(
+        results, "email_focus_tickers.csv", "universe: update email_focus_tickers.csv",
+        no_push=args.no_push,
+    )
+    return 0 if (universe_ok and focus_ok) else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -531,7 +621,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ingest.set_defaults(func=cmd_ingest)
 
-    verify = sub.add_parser("verify", help="read-only canonical-vs-DB drift check")
+    verify = sub.add_parser(
+        "verify",
+        help="read-only consistency checks: canonical-vs-DB drift, and the "
+             "email_scope=1 => active delivery invariant",
+    )
     verify.set_defaults(func=cmd_verify)
 
     sync_db = sub.add_parser("sync-db", help="upsert canonical universe into ticker_metadata")
@@ -567,6 +661,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="path to the upload file (default: most recent in universe_update_xlsx_files/)",
     )
     email_focus.add_argument("--apply", action="store_true", help="execute (default: plan only)")
+    email_focus.add_argument(
+        "--yes", action="store_true",
+        help=f"confirm promoting more than {ACTIVATION_THRESHOLD} names to active",
+    )
     email_focus.add_argument(
         "--no-push", action="store_true",
         help="write + commit locally but don't push (default: push automatically on --apply)",

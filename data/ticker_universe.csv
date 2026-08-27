@@ -31,7 +31,7 @@ Givaudan;CH0010645932;GIVN SW Equity;GIVN;Materials;CHF;GIVN.SW;active;2026-07-2
 Zurich Insurance Group AG;CH0011075394;ZURN SW Equity;ZURN;Financials;CHF;ZURN.SW;active;2026-07-29;;
 dormakaba Holding AG;CH0011795959;DOKA SE Equity;DOKA;Industrials;CHF;DOKA.SW;inactive;2026-07-29;;
 Novartis AG;CH0012005267;NOVN SW Equity;NOVN;Health Care;CHF;NOVN.SW;active;2026-07-29;;
-Roche Holding AG;CH0012032048;ROG SW Equity;ROG;Health Care;CHF;ROG.SW;inactive;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
+Roche Holding AG;CH0012032048;ROG SW Equity;ROG;Health Care;CHF;ROG.SW;active;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
 Roche Holding AG BR;CH0012032113;RO SW Equity;RO;Health Care;CHF;RO.SW;inactive;2026-07-29;;
 Tecan Group AG;CH0012100191;TECN SE Equity;TECN;Health Care;CHF;TECN.SW;active;2026-07-29;;
 Clariant AG;CH0012142631;CLN SE Equity;CLN;Materials;CHF;CLN.SW;inactive;2026-07-29;;
@@ -69,7 +69,7 @@ VAT Group AG;CH0311864901;VACN SW Equity;VACN;Industrials;CHF;VACN.SW;active;202
 Flughafen Zurich AG;CH0319416936;FHZN SW Equity;FHZN;Industrials;CHF;FHZN.SW;active;2026-07-29;;
 Comet Holding AG;CH0360826991;COTN SE Equity;COTN;Information Technology;CHF;COTN.SW;active;2026-07-29;;
 Medartis Holding AG;CH0386200239;MED SE Equity;MED;Health Care;CHF;MED.SW;active;2026-07-29;;
-SIKA;CH0418792922;SIKA SW Equity;SIKA;Materials;CHF;SIKA.SW;inactive;2026-07-29;;
+SIKA;CH0418792922;SIKA SW Equity;SIKA;Materials;CHF;SIKA.SW;active;2026-07-29;;
 Alcon;CH0432492467;ALC SW Equity;ALC;Health Care;CHF;ALC.SW;active;2026-07-29;;
 SIG Combibloc Group AG;CH0435377954;SIGN SE Equity;SIGN;Materials;CHF;SIGN.SW;active;2026-07-29;;
 Helvetia Holding AG;CH0466642201;HELN SE Equity;HBAN;Financials;CHF;HBAN.SW;inactive;2026-07-29;;
@@ -142,7 +142,7 @@ Pandora AS;DK0060252690;PNDORA DC Equity;PNDORA;Consumer Discretionary;DKK;PNDOR
 Novozymes AS;DK0060336014;NZYMB DC Equity;NZYMB;Materials;DKK;NSIS-B.CO;watchlist;2026-07-29;DK0060277782;ISIN change applied 2026-07-29 (universe update), yahoo_symbol corrected 2026-08-23 (NZYMB.CO 404s post Novozymes/Chr. Hansen merger into Novonesis, completed 2024-01-29 - Bloomberg ticker/ISIN unchanged, Yahoo relisted under NSIS-B.CO)
 Demant AS;DK0060738599;DEMANT DC Equity;DEMANT;Health Care;DKK;DEMANT.CO;inactive;2026-07-29;;
 VESTAS WIND SYSTEMS A/S;DK0061539921;VWS DC Equity;VWS;Industrials;DKK;VWS.CO;inactive;2026-07-29;;
-NOVO NORDISK A/S-B;DK0062498333;NOVOB DC Equity;NOVOB;Health Care;DKK;NOVO-B.CO;inactive;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
+NOVO NORDISK A/S-B;DK0062498333;NOVOB DC Equity;NOVOB;Health Care;DKK;NOVO-B.CO;active;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
 Cellnex Telecom SA;ES0105066007;CLNX SQ Equity;CLNX;Communication Services;EUR;CLNX.MC;inactive;2026-07-29;;
 CORP ACCIONA ENERGIAS RENOVA;ES0105563003;ANE SM Equity;ANE;Utilities;EUR;ANE.MC;watchlist;2026-07-29;;
 Amadeus IT Group SA;ES0109067019;AMS SQ Equity;AMS;Consumer Discretionary;EUR;AMS.MC;inactive;2026-07-29;;
@@ -172,7 +172,7 @@ Sanofi;FR0000120578;SAN FP Equity;SANPA;Health Care;EUR;SAN.PA;inactive;2026-07-
 AXA SA;FR0000120628;CS FP Equity;CS;Financials;EUR;CS.PA;inactive;2026-07-29;;
 Danone SA;FR0000120644;BN FP Equity;BN;Consumer Staples;EUR;BN.PA;inactive;2026-07-29;;
 Pernod Ricard SA;FR0000120693;RI FP Equity;RI;Consumer Staples;EUR;RI.PA;inactive;2026-07-29;;
-LVMH;FR0000121014;MC FP Equity;MC;Consumer Discretionary;EUR;MC.PA;inactive;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
+LVMH;FR0000121014;MC FP Equity;MC;Consumer Discretionary;EUR;MC.PA;active;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
 Faurecia SE;FR0000121147;EO FP Equity;EO;Consumer Discretionary;EUR;EO.PA;watchlist;2026-07-29;;
 Kering SA;FR0000121485;KER FP Equity;KER;Consumer Discretionary;EUR;KER.PA;inactive;2026-07-29;;
 Essilor International;FR0000121667;EL FP Equity;EL;Health Care;EUR;EL.PA;inactive;2026-07-29;;
@@ -214,7 +214,7 @@ AstraZeneca PLC;GB0009895292;AZN LN Equity;AZN;Health Care;GBP;AZN.L;active;2026
 Next PLC;GB0032089863;NXT LN Equity;NXT;Consumer Discretionary;GBP;NXT.L;watchlist;2026-07-29;;
 Admiral Group Plc;GB00B02J6398;ADM LN Equity;ADM;Financials;GBP;ADM.L;inactive;2026-07-29;;
 Rentokil Initial PLC;GB00B082RF11;RTO LN Equity;RTO;Industrials;GBP;RTO.L;inactive;2026-07-29;;
-London Stock Exchange Group PLC;GB00B0SWJX34;LSEG LN Equity;LSEG;Financials;GBP;LSEG.L;inactive;2026-07-29;;
+London Stock Exchange Group PLC;GB00B0SWJX34;LSEG LN Equity;LSEG;Financials;GBP;LSEG.L;active;2026-07-29;;
 Unilever;GB00B10RZP78;ULVR LN Equity;ULVR;Consumer Staples;GBP;ULVR.L;inactive;2026-07-29;;
 Severn Trent PLC;GB00B1FH8J72;SVT LN Equity;SVT;Utilities;GBP;SVT.L;inactive;2026-07-29;;
 Drax Group PLC;GB00B1VNSX38;DRX LN Equity;DRX;Utilities;GBP;DRX.L;inactive;2026-07-29;;
@@ -306,7 +306,7 @@ Atlas Copco AB Class A;SE0017486889;ATCOA SS Equity;ATCOA;Industrials;SEK;ATCO-A
 AT&T Inc;US00206R1023;T US Equity;T;Communication Services;USD;T;inactive;2026-07-29;;
 Abbott Laboratories;US0028241000;ABT UN Equity;ABT;Health Care;USD;ABT;inactive;2026-07-29;;
 AbbVie Inc.;US00287Y1091;ABBV US Equity;ABBV;Health Care;USD;ABBV;inactive;2026-07-29;;
-Adobe;US00724F1012;ADBE US Equity;ADBE;Information Technology;USD;ADBE;inactive;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
+Adobe;US00724F1012;ADBE US Equity;ADBE;Information Technology;USD;ADBE;active;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
 Advanced Micro Devices Inc;US0079031078;AMD UW Equity;AMD;Information Technology;USD;AMD;inactive;2026-07-29;;
 Albemarle Corp;US0126531013;ALB UN Equity;ALB;Materials;USD;ALB;watchlist;2026-07-29;;
 Alibaba Group Holding;US01609W1027;BABA US Equity;BABA;Consumer Discretionary;USD;BABA;watchlist;2026-07-29;;
@@ -353,7 +353,7 @@ Cheniere Energy Inc;US16411R2085;LNG UA Equity;LNG;Energy;USD;LNG;inactive;2026-
 Chevron Corp;US1667641005;CVX US Equity;CVX;Energy;USD;CVX;inactive;2026-07-29;;
 Chipotle Mexican Grill Inc;US1696561059;CMG UN Equity;CMG;Consumer Discretionary;USD;CMG;inactive;2026-07-29;;
 Church & Dwight Co Inc;US1713401024;CHD UN Equity;CHD;Consumer Staples;USD;CHD;inactive;2026-07-29;;
-Cisco Systems;US17275R1023;CSCO US Equity;CSCO;Information Technology;USD;CSCO;inactive;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
+Cisco Systems;US17275R1023;CSCO US Equity;CSCO;Information Technology;USD;CSCO;active;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
 Cloudflare Inc;US18915M1071;NET UN Equity;NET;Information Technology;USD;NET;inactive;2026-07-29;;
 Coca-Cola Company (The);US1912161007;KO US Equity;KO;Consumer Staples;USD;KO;inactive;2026-07-29;;
 Coinbase Global Inc;US19260Q1076;COIN US Equity;COIN;Financials;USD;COIN;inactive;2026-07-29;;
@@ -414,7 +414,7 @@ Masco Corp;US5745991068;MAS UN Equity;MAS;Industrials;USD;MAS;inactive;2026-07-2
 Mastercard Inc;US57636Q1040;MA US Equity;MA;Financials;USD;MA;active;2026-07-29;;
 McCormick & Co Inc;US5797802064;MKC UN Equity;MKC;Consumer Staples;USD;MKC;inactive;2026-07-29;;
 McDonalds Corp;US5801351017;MCD US Equity;MCD;Consumer Discretionary;USD;MCD;inactive;2026-07-29;;
-Merck & Co Inc;US58933Y1055;MRK US Equity;MRK;Health Care;USD;MRK;inactive;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
+Merck & Co Inc;US58933Y1055;MRK US Equity;MRK;Health Care;USD;MRK;active;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
 Microsoft Inc;US5949181045;MSFT US Equity;MSFT;Information Technology;USD;MSFT;active;2026-07-29;;
 Micron Technology Inc;US5951121038;MU UW Equity;MU;Information Technology;USD;MU;inactive;2026-07-29;;
 Middleby Corp The;US5962781010;MIDD UW Equity;MIDD;Industrials;USD;MIDD;inactive;2026-07-29;;
@@ -438,11 +438,11 @@ Palantir Technologies Inc.;US69608A1088;PLTR US Equity;PLTR;Information Technolo
 Palo Alto Networks Inc;US6974351057;PANW UN Equity;PANW;Information Technology;USD;PANW;inactive;2026-07-29;;
 Paychex Inc;US7043261079;PAYX UW Equity;PAYX;Industrials;USD;PAYX;inactive;2026-07-29;;
 PayPal Holdings Inc;US70450Y1038;PYPL UW Equity;PYPL;Financials;USD;PYPL;inactive;2026-07-29;;
-PepsiCo Inc;US7134481081;PEP US Equity;PEP;Consumer Staples;USD;PEP;inactive;2026-07-29;;
+PepsiCo Inc;US7134481081;PEP US Equity;PEP;Consumer Staples;USD;PEP;active;2026-07-29;;
 Pfizer Inc;US7170811035;PFE US Equity;PFE;Health Care;USD;PFE;inactive;2026-07-29;;
 Philip Morris International Inc;US7181721090;PM US Equity;PM;Consumer Staples;USD;PM;inactive;2026-07-29;;
 T Rowe Price Group Inc;US74144T1088;TROW UW Equity;TROW;Financials;USD;TROW;inactive;2026-07-29;;
-Procter & Gamble;US7427181091;PG US Equity;PG;Consumer Staples;USD;PG;inactive;2026-07-29;;
+Procter & Gamble;US7427181091;PG US Equity;PG;Consumer Staples;USD;PG;active;2026-07-29;;
 Progressive CorpThe;US7433151039;PGR UN Equity;PGR;Financials;USD;PGR;active;2026-07-29;;
 QUALCOMM Inc;US7475251036;QCOM US Equity;QCOM;Information Technology;USD;QCOM;inactive;2026-07-29;;
 Quanta Services Inc;US74762E1029;PWR UN Equity;PWR;Industrials;USD;PWR;inactive;2026-07-29;;
@@ -451,7 +451,7 @@ ROCKET LAB CORP;US7731211089;RKLB US Equity;RKLB;Industrials;USD;RKLB;inactive;2
 Rockwell Automation Inc;US7739031091;ROK UN Equity;ROK;Industrials;USD;ROK;inactive;2026-07-29;;
 Rollins Inc;US7757111049;ROL UN Equity;ROL;Industrials;USD;ROL;inactive;2026-07-29;;
 RYAN SPECIALTY HOLDINGS INC;US78351F1075;RYAN US Equity;RYAN;Financials;USD;RYAN;inactive;2026-07-29;;
-S&P Global Inc;US78409V1044;SPGI US Equity;SPGI;Financials;USD;SPGI;inactive;2026-07-29;;
+S&P Global Inc;US78409V1044;SPGI US Equity;SPGI;Financials;USD;SPGI;active;2026-07-29;;
 Salesforce.com Inc;US79466L3024;CRM US Equity;CRM;Information Technology;USD;CRM;active;2026-07-29;;
 Charles Schwab Corp The;US8085131055;SCHW UN Equity;SCHW;Financials;USD;SCHW;inactive;2026-07-29;;
 SEA LTD-ADR;US81141R1005;SE US Equity;SE;Communication Services;USD;SE;inactive;2026-07-29;;
@@ -475,7 +475,7 @@ TransUnion;US89400J1079;TRU UN Equity;TRU;Industrials;USD;TRU;inactive;2026-07-2
 Trimble Inc;US8962391004;TRMB UW Equity;TRMB;Information Technology;USD;TRMB;inactive;2026-07-29;;
 Uber Technologies Inc;US90353T1007;UBER UN Equity;UBER;Industrials;USD;UBER;inactive;2026-07-29;;
 Union Pacific Corp;US9078181081;UNP US Equity;UNP;Industrials;USD;UNP;watchlist;2026-07-29;;
-UnitedHealth Group Inc;US91324P1021;UNH UN Equity;UNH;Health Care;USD;UNH;inactive;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
+UnitedHealth Group Inc;US91324P1021;UNH UN Equity;UNH;Health Care;USD;UNH;active;2026-07-29;;seed: demoted from DB-active (was never in consumer CSV)
 Valmont Industries Inc;US9202531011;VMI UN Equity;VMI;Industrials;USD;VMI;inactive;2026-07-29;;
 Veeva Systems Inc;US9224751084;VEEV UN Equity;VEEV;Health Care;USD;VEEV;inactive;2026-07-29;;
 Veralto Corp;US92338C1036;VLTO US Equity;VLTO;Industrials;USD;VLTO;active;2026-07-29;;

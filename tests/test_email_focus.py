@@ -11,12 +11,15 @@ import pytest
 
 from research_commons.universe.email_focus import (
     EmailFocusRow,
+    delivery_scope_violations,
     latest_update_file,
     plan_email_focus_merge,
+    promote_delivery_scopes,
     read_email_focus,
     read_email_focus_upload,
     write_email_focus,
 )
+from research_commons.universe.io import UniverseRow
 
 
 def row(isin, name="Acme", pm_ch="0", pm_de="0", advisory="0", email="0"):
@@ -202,3 +205,50 @@ def test_isin_absent_from_current_and_upload_never_appears(tmp_path):
     plan = plan_email_focus_merge(current, upload, resolve_removed=lambda r: True)
     assert all(r.isin == "CH0001" for r in plan.result)
     assert len(plan.result) == 1
+
+
+# ---------------------------------------------------------------------------
+# The delivery-scope invariant: email_scope=1 implies a scored (active) tier.
+# ---------------------------------------------------------------------------
+
+def uni(isin, ticker="ACME", scope="inactive"):
+    return UniverseRow(
+        company_name="Acme", isin=isin, bloomberg_ticker=f"{ticker} US Equity",
+        ticker=ticker, scope_status=scope,
+    )
+
+
+class TestDeliveryScopeInvariant:
+    def test_emailed_but_not_active_is_a_violation(self):
+        universe = [uni("US1", "AAA", "inactive"), uni("US2", "BBB", "active")]
+        focus = [row("US1", email="1"), row("US2", email="1")]
+        assert [r.ticker for r in delivery_scope_violations(universe, focus)] == ["AAA"]
+
+    def test_unemailed_names_may_hold_any_tier(self):
+        universe = [uni("US1", "AAA", "watchlist"), uni("US2", "BBB", "inactive")]
+        focus = [row("US1", email="0"), row("US2", pm_ch="1", advisory="1")]
+        assert delivery_scope_violations(universe, focus) == []
+
+    def test_isin_absent_from_the_focus_file_is_not_emailed(self):
+        assert delivery_scope_violations([uni("US1", "AAA", "watchlist")], []) == []
+
+    def test_promotion_rewrites_only_the_offenders(self):
+        universe = [uni("US1", "AAA", "watchlist"), uni("US2", "BBB", "inactive")]
+        focus = [row("US1", email="1")]
+        result, promoted = promote_delivery_scopes(universe, focus)
+        assert [(r.ticker, r.scope_status) for r in result] == [("AAA", "active"), ("BBB", "inactive")]
+        assert [r.ticker for r in promoted] == ["AAA"]
+        # The caller still holds the untouched originals to diff against.
+        assert universe[0].scope_status == "watchlist"
+
+    def test_promotion_is_a_no_op_when_the_invariant_already_holds(self):
+        universe = [uni("US1", "AAA", "active")]
+        result, promoted = promote_delivery_scopes(universe, [row("US1", email="1")])
+        assert promoted == []
+        # A fresh list either way, so a caller may mutate the result safely.
+        assert result == universe and result is not universe
+
+    def test_clearing_email_scope_never_demotes(self):
+        universe = [uni("US1", "AAA", "active")]
+        result, promoted = promote_delivery_scopes(universe, [row("US1", email="0")])
+        assert promoted == [] and result[0].scope_status == "active"

@@ -4,31 +4,43 @@ What every field in the two canonical universe files means, who writes it, and
 what it actually causes to happen downstream.
 
 Both files live in `data/` in this repo, are git-versioned, and are `;`-delimited.
-Last reviewed: 2026-08-23.
+Last reviewed: 2026-08-27.
 
 ---
 
 ## The two axes
 
 The single most important thing to understand: **coverage and delivery are
-separate, independent axes.** They live in different files on purpose.
+separate axes, and coverage never implies delivery.** They live in different
+files on purpose. The one link between them runs the other way and is spelled
+out below.
 
 | | file | question it answers | who consumes it |
 |---|---|---|---|
 | **Coverage** | `data/ticker_universe.csv` → `scope_status` | *what data do we collect and compute for this company?* | MSARN pipeline, Companies_News collection, risk_monitor |
 | **Delivery** | `data/email_focus_tickers.csv` → `email_scope` + PM/advisory flags | *who receives this company in the briefing email?* | Companies_News email only |
 
-A ticker can be fully covered and never emailed, or emailed regardless of how
-little we collect for it. Neither file derives from the other. The audience
-flags used to be columns on the universe file; they were retired from there on
-2026-07-29 and reinstated as their own file the same day, precisely because
-collapsing the two axes into one dial lost information the email pipeline
-needed.
+A ticker can be fully covered and never emailed. The audience flags used to be
+columns on the universe file; they were retired from there on 2026-07-29 and
+reinstated as their own file the same day, precisely because collapsing the two
+axes into one dial lost information the email pipeline needed.
 
-> **Historical note.** On 2026-08-23 the audience flags were used *once*, by
-> hand, as the input signal for a coverage re-tiering (see "Amendment log"
-> below). That was a one-off manual decision, not a standing rule, and it did
-> not create a link between the files. Nothing reads one to compute the other.
+> **One directed link, added 2026-08-27.** The axes are independent in the
+> coverage→delivery direction only: `scope_status` never implies delivery, and
+> an `active` ticker is not emailed unless it is flagged. In the other
+> direction there is now a standing, enforced rule — **`email_scope=1` implies
+> `scope_status=active`** — because a name on the delivery list is one the desk
+> is working, and only the daily `scoring_daily` cadence keeps its risk numbers
+> same-day fresh. `update-email-focus` promotes violators when it merges an
+> audience upload (writing `ticker_universe.csv`, the DB mirror and every
+> consumer's `tickers.csv` alongside the audience file, with the same
+> `ACTIVATION_THRESHOLD`/`--yes` cost gate `ingest` applies); `verify` reports
+> them read-only. The rule is deliberately **one-way and monotone**: clearing
+> `email_scope` never demotes anything, because coverage has its own reasons to
+> keep a name active. Supersedes the previous "neither file derives from the
+> other" wording, and the 2026-08-23 note that the one-off re-tier "did not
+> create a link between the files" — that link now exists, in this one
+> direction, by design.
 
 ---
 
@@ -67,21 +79,28 @@ sets locally.
 | `altdata` (Google Trends, EDGAR) | ✅ | ✅ | — |
 | `options` | ✅ | ✅ | — |
 | `news` (+ LLM classification) | ✅ | ✅ | — |
-| `scoring` (model inference, daily overview merge) | ✅ | — | — |
+| `scoring` (model inference, weekly `SCOPE_FULL` rebuild) | ✅ | ✅ | — |
+| `scoring_daily` (the fast `SCOPE_FOCUS` overview merge) | ✅ | — | — |
 
 Read in plain language:
 
-- **`active`** — everything, plus model scoring. `scoring` is the *only* stage
-  that separates active from inactive; on every other axis the two are
-  identical. Currently 73 names.
+- **`active`** — everything, and scored **daily**. `scoring_daily` is the
+  *only* stage that separates active from inactive; on every other axis the
+  two are identical. Currently 85 names.
 - **`inactive`** — collected and feature-engineered on exactly the same cadence
-  as active, but never scored. This is the bulk of the universe (368) and is
-  not a dormant tier despite the name.
+  as active, and scored too — but only in MSARN's weekly `SCOPE_FULL` rebuild
+  (launchd Sundays 01:00, and risk_monitor's Saturday `covered` run), so its
+  risk numbers can be up to a week old. This is the bulk of the universe (356)
+  and is not a dormant tier despite the name.
 - **`watchlist`** — prices and fundamentals only. Quant-analysable for equity
   research, cheap to hold, instant to promote. No features, no alt-data, no
   options, no news, no LLM spend. Currently 55 names.
 
-Counts as of 2026-08-23: **73 active / 368 inactive / 55 watchlist**.
+Corrected 2026-08-27: this table said `scoring` was active-only and that
+inactive was "never scored". Only the *daily* merge is active-only — the
+active/inactive line is a scoring cadence, not scoring at all.
+
+Counts as of 2026-08-27: **85 active / 356 inactive / 55 watchlist**.
 
 ### Promotion and demotion
 
@@ -151,6 +170,26 @@ name joining with older history kept its gap permanently.
 **2026-08-23** — `scope_policy.py` introduced as the single definition of the
 tier → stage mapping, replacing six hand-synced copies across three repos.
 Watchlist gained recurring prices + fundamentals.
+
+**2026-08-27** — Two corrections and one new rule.
+1. `scope_policy`'s `scoring` stage was wrong: it said `{active}` and the docs
+   said `inactive` was "never scored". MSARN's weekly `SCOPE_FULL` overview
+   rebuild scores the whole covered universe; only the daily `SCOPE_FOCUS`
+   merge is active-only. The table now carries `scoring` (active + inactive)
+   and `scoring_daily` (active only) — the active/inactive line is a scoring
+   *cadence*, not scoring at all.
+2. `email_scope=1` now implies `scope_status=active`, enforced by
+   `update-email-focus` and reported by `verify` (see "The two axes"). Applied
+   once on introduction: 12 rows `inactive` → `active` (`ROG`, `SIKA`,
+   `NOVOB`, `MC`, `LSEG`, `ADBE`, `CSCO`, `MRK`, `PEP`, `PG`, `SPGI`, `UNH`),
+   taking active from 73 to 85. Downstream that adds 12 names to MSARN's daily
+   `SCOPE_FOCUS` merge and to risk_monitor's daily `scope="active"` scoring —
+   the only cost the promotion carries, since every other stage already ran
+   for them as `inactive`.
+3. Both corrections came out of an incident: the 2026-08-27 weekly briefing
+   covered two companies instead of 47, because Companies_News' universe load
+   swallowed an exception and fell back to a 3-name developer default. Fixed
+   there by making the load fail loudly; see that repo's CLAUDE.md.
 
 **2026-08-23** — One-time re-tier: 47 rows moved `inactive` → `watchlist`,
 namely those carrying no PM and no advisory flag in `email_focus_tickers.csv`
