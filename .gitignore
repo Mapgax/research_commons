@@ -27,3 +27,6 @@ htmlcov/
 
 # Generated reports
 reports/source_health/*.md
+
+# Relevance-gate eval: labels are R&Co coverage decisions — local only
+eval/

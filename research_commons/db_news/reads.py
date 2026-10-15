@@ -11,6 +11,10 @@ Frozen API surface:
     load_documents(*, source_pipeline=None, since=None) -> pd.DataFrame
     load_pipeline_runs(pipeline_name, *, limit=20) -> pd.DataFrame
     resolve_alias(text) -> str | None
+    effective_relevance(judged, prior) -> float | None
+    effective_relevance_sql(alias="ac") -> str
+    load_article_links(*, article_ids=None, ticker=None, since=None,
+                       min_relevance=None) -> pd.DataFrame
 """
 
 from __future__ import annotations
@@ -226,3 +230,65 @@ def resolve_alias(text: str) -> str | None:
             cur.execute(sql, {"alias": (text or "").strip().lower()})
             row = cur.fetchone()
             return row[0] if row else None
+
+
+def effective_relevance(judged: float | None, prior: float | None) -> float | None:
+    """Judged relevance when there is one, else the string-match prior.
+
+    The Python twin of :func:`effective_relevance_sql`; both encode the one
+    rule from docs/spec-jev-relevance-gate.md.
+    """
+    return judged if judged is not None else prior
+
+
+def effective_relevance_sql(alias: str = "ac") -> str:
+    """SQL expression for an ``article_companies`` row's effective relevance."""
+    return f"COALESCE({alias}.relevance_judged, {alias}.relevance)"
+
+
+def load_article_links(
+    *,
+    article_ids: list[int] | None = None,
+    ticker: str | None = None,
+    since: datetime | None = None,
+    min_relevance: float | None = None,
+) -> pd.DataFrame:
+    """Return (article, ticker) links with prior, judged and effective relevance.
+
+    Columns: article_id, ticker, relevance_prior, relevance_judged,
+    relevance_judge, effective_relevance, published_at. ``relevance_judge``
+    is NULL when the effective value is the prior. ``min_relevance`` filters
+    on effective relevance (links with neither value are dropped by it).
+    """
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    eff = effective_relevance_sql("ac")
+
+    if article_ids is not None:
+        clauses.append("ac.article_id = ANY(%(article_ids)s)")
+        params["article_ids"] = list(article_ids)
+    if ticker is not None:
+        clauses.append("ac.ticker = %(ticker)s")
+        params["ticker"] = ticker
+    if since is not None:
+        clauses.append("a.published_at >= %(since)s")
+        params["since"] = since
+    if min_relevance is not None:
+        clauses.append(f"{eff} >= %(min_relevance)s")
+        params["min_relevance"] = min_relevance
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"""
+        SELECT ac.article_id, ac.ticker,
+               ac.relevance        AS relevance_prior,
+               ac.relevance_judged,
+               ac.relevance_judge,
+               {eff}               AS effective_relevance,
+               a.published_at
+        FROM article_companies ac
+        JOIN articles a ON a.id = ac.article_id
+        {where}
+        ORDER BY a.published_at DESC NULLS LAST, ac.article_id DESC
+    """
+    with get_connection() as conn:
+        return pd.read_sql_query(sql, conn, params=params, parse_dates=["published_at"])

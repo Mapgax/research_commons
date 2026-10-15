@@ -45,6 +45,18 @@ class Settings:
     market_role: str | None = None
     news_role: str | None = None
 
+    # Relevance gate (docs/spec-jev-relevance-gate.md). Off by default: an
+    # unconfigured deploy judges nothing and sends nothing anywhere.
+    relevance_judge: str = "none"            # none | haiku | jev
+    relevance_threshold: float = 0.5         # provisional until the offline eval sets it
+    relevance_daily_cap: int = 5000          # judge attempts per UTC day
+    # Jev sends article excerpts to TypeSafe, a processor that needs a recorded
+    # privacy sign-off. The judge refuses to construct unless this is true.
+    relevance_jev_opt_in: bool = False
+    # OpenRouter as a second processor for Jev — off unless separately approved.
+    relevance_jev_allow_fallback: bool = False
+    typesafe_api_key: str | None = None
+
     extras: dict[str, str] = field(default_factory=dict)
 
 
@@ -74,6 +86,13 @@ def _require(name: str) -> str:
             f"See README.md in the research_commons repo for the full list."
         )
     return val
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _parse_csv_env(name: str) -> tuple[str, ...]:
@@ -107,6 +126,12 @@ def get_settings() -> Settings:
         news_pool_max=int(os.getenv("NEWS_POOL_MAX", "5")),
         market_role=os.getenv("MARKET_ROLE"),
         news_role=os.getenv("NEWS_ROLE"),
+        relevance_judge=os.getenv("RELEVANCE_JUDGE", "none").strip().lower() or "none",
+        relevance_threshold=float(os.getenv("RELEVANCE_THRESHOLD", "0.5")),
+        relevance_daily_cap=int(os.getenv("RELEVANCE_DAILY_CAP", "5000")),
+        relevance_jev_opt_in=_env_bool("RELEVANCE_JEV_OPT_IN"),
+        relevance_jev_allow_fallback=_env_bool("RELEVANCE_JEV_ALLOW_FALLBACK"),
+        typesafe_api_key=os.getenv("TYPESAFE_API_KEY"),
     )
 
 

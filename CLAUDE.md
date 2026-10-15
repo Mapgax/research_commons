@@ -77,6 +77,18 @@ Two Aiven Postgres databases: **`market`** (prices, fundamentals, features,
   because consumer runtime is CSV-authoritative. The one definition of which
   pipeline stages run for which tier — see the coverage rules below.
 - `research_commons/source_health/` — independent homepage monitor.
+- `research_commons/db_news/relevance.py` — the relevance gate
+  (`docs/spec-jev-relevance-gate.md`): a `RelevanceJudge` protocol with
+  `HaikuRelevanceJudge` / `JevRelevanceJudge`, and `judge_pending_links()`,
+  which writes `article_companies.relevance_judged*` next to the string-match
+  prior. Read relevance through `reads.effective_relevance_sql()` /
+  `load_article_links()` — never restate `COALESCE(relevance_judged, relevance)`.
+  Off by default (`RELEVANCE_JUDGE=none`). **The Jev judge sends article
+  excerpts to TypeSafe and refuses to construct without
+  `RELEVANCE_JEV_OPT_IN=true`, which needs the spec's Phase 0 privacy
+  sign-off first.** `refresh_sentiment_daily` also fills the weighted
+  `sentiment_daily` columns; the original columns keep their meaning.
+  Offline eval: `scripts/relevance_eval.py` (data in git-ignored `eval/`).
 - `migrations/market/*.sql`, `migrations/news/*.sql` — the only schema source.
 - `reports/ticker_universe_report.py` — read-only Streamlit dashboard: ticker
   metadata (scope_status, sector, email-focus flags) joined against per-table
@@ -255,7 +267,9 @@ checking `pg_constraint` / `information_schema`). Postgres has no
 
 `MARKET_DATABASE_URL`, `NEWS_DATABASE_URL`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
 `LLM_PRIMARY_MODEL`, `LLM_FALLBACK_MODEL`, `RC_LOG_LEVEL`, `SOURCE_HEALTH_*`,
-`RESEND_API_KEY`, `RESEND_FROM`, `EMAIL_TO`, `EMAIL_USER`, `EMAIL_PASS`.
+`RESEND_API_KEY`, `RESEND_FROM`, `EMAIL_TO`, `EMAIL_USER`, `EMAIL_PASS`,
+`TYPESAFE_API_KEY`, `RELEVANCE_JUDGE`, `RELEVANCE_THRESHOLD`, `RELEVANCE_DAILY_CAP`,
+`RELEVANCE_JEV_OPT_IN`, `RELEVANCE_JEV_ALLOW_FALLBACK`.
 
 ## CI
 

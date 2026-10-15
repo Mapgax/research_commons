@@ -9,7 +9,7 @@ Frozen API surface:
     upsert_articles_bulk(payloads: list[ArticleRow]) -> list[int]
     upsert_classification(article_id: int, payload: ClassificationRow) -> int
     upsert_article_companies(article_id, tickers, relevance=None) -> None  (additive)
-    refresh_sentiment_daily(*, since: date | None = None) -> int
+    refresh_sentiment_daily(*, since=None, relevance_threshold=None) -> int
     upsert_briefing(...) -> int
     upsert_document(...) -> int
     record_pipeline_run(...) -> int
@@ -23,7 +23,9 @@ import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
+from research_commons.config import get_settings
 from research_commons.db_news.connection import get_connection
+from research_commons.db_news.reads import effective_relevance_sql
 from research_commons.types import ArticleRow, ClassificationRow
 
 logger = logging.getLogger(__name__)
@@ -180,7 +182,11 @@ def upsert_article_companies(
             conn.commit()
 
 
-def refresh_sentiment_daily(*, since: date | None = None) -> int:
+def refresh_sentiment_daily(
+    *,
+    since: date | None = None,
+    relevance_threshold: float | None = None,
+) -> int:
     """Recompute the ``sentiment_daily`` aggregate.
 
     Uses the latest classifier_version per article. Returns number of
@@ -190,18 +196,32 @@ def refresh_sentiment_daily(*, since: date | None = None) -> int:
     sources (and which reliability tiers) corroborate a ticker/date —
     consumers use this to flag thin-coverage signal (see
     ``Companies_News/enrichment.py``'s ``coverage_low``).
+
+    The relevance-weighted columns (``n_articles_relevant``,
+    ``sentiment_mean_weighted`` = sum(rel*s)/sum(rel), ``severity_max_relevant``,
+    ``relevance_judge``) use only links whose effective relevance is
+    >= ``relevance_threshold`` (default ``RELEVANCE_THRESHOLD``). A link with
+    neither a judgment nor a prior counts as not relevant. The original
+    columns keep their unweighted, every-link definition.
     """
+    if relevance_threshold is None:
+        relevance_threshold = get_settings().relevance_threshold
     where_clause = ""
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = {"rel_threshold": relevance_threshold}
     if since is not None:
         where_clause = "AND a.published_at >= %(since)s"
         params["since"] = since
 
+    eff = effective_relevance_sql("ac")
+    relevant = f"{eff} >= %(rel_threshold)s"
+    judge_label = "COALESCE(ac.relevance_judge, 'prior')"
     sql = f"""
         INSERT INTO sentiment_daily
             (ticker, date, n_articles, sentiment_mean, sentiment_std,
              severity_max, classifier_version, source_count,
-             source_tiers_present, refreshed_at)
+             source_tiers_present, refreshed_at,
+             n_articles_relevant, sentiment_mean_weighted,
+             severity_max_relevant, relevance_judge)
         SELECT
             ac.ticker,
             a.published_at::date                   AS date,
@@ -212,7 +232,16 @@ def refresh_sentiment_daily(*, since: date | None = None) -> int:
             max(c.classifier_version)              AS classifier_version,
             count(DISTINCT a.source)               AS source_count,
             array_agg(DISTINCT s.reliability_tier)  AS source_tiers_present,
-            now()                                  AS refreshed_at
+            now()                                  AS refreshed_at,
+            count(*) FILTER (WHERE {relevant})     AS n_articles_relevant,
+            sum({eff} * c.sentiment_score) FILTER (WHERE {relevant})
+                / NULLIF(sum({eff}) FILTER (
+                    WHERE {relevant} AND c.sentiment_score IS NOT NULL), 0)
+                                                   AS sentiment_mean_weighted,
+            max(c.severity) FILTER (WHERE {relevant})
+                                                   AS severity_max_relevant,
+            string_agg(DISTINCT {judge_label}, ',' ORDER BY {judge_label})
+                FILTER (WHERE {relevant})          AS relevance_judge
         FROM articles a
         JOIN article_companies ac ON ac.article_id = a.id
         JOIN sources s ON s.name = a.source
@@ -234,7 +263,11 @@ def refresh_sentiment_daily(*, since: date | None = None) -> int:
             classifier_version   = EXCLUDED.classifier_version,
             source_count         = EXCLUDED.source_count,
             source_tiers_present = EXCLUDED.source_tiers_present,
-            refreshed_at         = EXCLUDED.refreshed_at
+            refreshed_at         = EXCLUDED.refreshed_at,
+            n_articles_relevant     = EXCLUDED.n_articles_relevant,
+            sentiment_mean_weighted = EXCLUDED.sentiment_mean_weighted,
+            severity_max_relevant   = EXCLUDED.severity_max_relevant,
+            relevance_judge         = EXCLUDED.relevance_judge
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
