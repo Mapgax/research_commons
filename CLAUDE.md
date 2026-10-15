@@ -89,6 +89,12 @@ Two Aiven Postgres databases: **`market`** (prices, fundamentals, features,
   sign-off first.** `refresh_sentiment_daily` also fills the weighted
   `sentiment_daily` columns; the original columns keep their meaning.
   Offline eval: `scripts/relevance_eval.py` (data in git-ignored `eval/`).
+  After go-live, follow `docs/relevance-gate-runbook.md`: a weekly read-only
+  `scripts/relevance_gate.py drift`, a monthly `relevance_eval.py sample
+  --top-up 50` + `run` (appends to `eval/relevance/history.csv`), and threshold
+  moves (`RELEVANCE_THRESHOLD` on Companies_News `morning-collect` and
+  `evening-collect`). Re-judging after a `HAIKU_JUDGE_VERSION` bump uses
+  `relevance_gate.py rejudge --since …` (plan-only without `--apply`).
 - `migrations/market/*.sql`, `migrations/news/*.sql` — the only schema source.
 - `reports/ticker_universe_report.py` — read-only Streamlit dashboard: ticker
   metadata (scope_status, sector, email-focus flags) joined against per-table

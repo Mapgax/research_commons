@@ -264,6 +264,15 @@ disagreements per judge with label and judge probability.
 - Idee_Scraping's discovery flow.
 - Adding risk_monitor as a research_commons dependency.
 
+## After go-live
+
+The improvement loop lives in `docs/relevance-gate-runbook.md`. It covers a
+weekly drift check (`scripts/relevance_gate.py drift`) and a monthly top-up of
+the labelled set (`scripts/relevance_eval.py sample --top-up 50`, then `run`,
+which appends to `eval/relevance/history.csv`). It also covers how to move
+`RELEVANCE_THRESHOLD`, and how to bump the judge version and re-judge existing
+links (`rejudge_stale_links` / `relevance_gate.py rejudge`, user story 23).
+
 ## Further Notes
 
 - Pushing to `research_commons@main` releases to every consumer. Ship the

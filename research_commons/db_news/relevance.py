@@ -18,6 +18,10 @@ Frozen API surface:
     make_relevance_judge(settings=None) -> RelevanceJudge | None
     judge_pending_links(judge, *, company_names, limit=None, since=None,
                         daily_cap=None) -> JudgeRunStats
+    rejudge_stale_links(judge, *, company_names, since, limit=None,
+                        daily_cap=None) -> JudgeRunStats
+    count_stale_links(judge_version, *, tickers, since) -> dict[str, int]
+    WeeklyDrift, weekly_drift(*, weeks=8, threshold=None, tickers=None)
 
 Privacy: the payload a judge sends is built here from :class:`RelevanceLink`
 alone — title, a body excerpt capped at :data:`BODY_EXCERPT_CHARS`, ticker and
@@ -38,7 +42,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from research_commons.config import Settings, get_settings
@@ -456,31 +460,123 @@ def judge_pending_links(
     after :data:`RETRY_AFTER`; a judge outage degrades to the prior and never
     raises. A chunk in which every link fails stops the run.
     """
-    names = {t: n.strip() for t, n in company_names.items() if t and n and n.strip()}
-    if not names:
-        logger.warning("judge_pending_links: no company names given — nothing to judge")
-        return JudgeRunStats(0, 0, 0, 0)
-    cap = get_settings().relevance_daily_cap if daily_cap is None else daily_cap
-
-    params: dict[str, Any] = {"tickers": sorted(names)}
+    params: dict[str, Any] = {}
     since_clause = ""
     if since is not None:
         since_clause = "AND a.published_at >= %(since)s"
         params["since"] = since
+    return _judge_and_write(
+        judge, "judge_pending_links", company_names=company_names, limit=limit,
+        daily_cap=daily_cap, select_sql=_PENDING_SQL.format(since_clause=since_clause),
+        params=params, mark_failed_sql=_MARK_FAILED_SQL,
+    )
+
+
+_STALE_WHERE = f"""
+    ac.relevance_judge IS NOT NULL
+      AND split_part(ac.relevance_judge, '/', 1) <> %(version)s
+      AND ac.relevance_judged_at < now() - interval '{RETRY_AFTER}'
+      AND ac.ticker = ANY(%(tickers)s)
+      AND a.published_at >= %(since)s
+"""
+
+_STALE_SQL = f"""
+    SELECT ac.article_id, ac.ticker, a.title, left(a.body, {BODY_EXCERPT_CHARS})
+    FROM article_companies ac
+    JOIN articles a ON a.id = ac.article_id
+    WHERE {_STALE_WHERE}
+    ORDER BY a.published_at DESC NULLS LAST, ac.article_id DESC
+    LIMIT %(limit)s
+"""
+
+_COUNT_STALE_SQL = f"""
+    SELECT ac.relevance_judge, count(*)
+    FROM article_companies ac
+    JOIN articles a ON a.id = ac.article_id
+    WHERE {_STALE_WHERE}
+    GROUP BY ac.relevance_judge
+    ORDER BY count(*) DESC
+"""
+
+# A failed re-judge keeps the old judgment and stamps the attempt, so the
+# link waits RETRY_AFTER and the attempt counts toward the daily cap.
+_MARK_REJUDGE_FAILED_SQL = """
+    UPDATE article_companies
+    SET relevance_judged_at = now()
+    WHERE article_id = %s AND ticker = %s
+"""
+
+
+def rejudge_stale_links(
+    judge: RelevanceJudge,
+    *,
+    company_names: Mapping[str, str],
+    since: datetime,
+    limit: int | None = None,
+    daily_cap: int | None = None,
+) -> JudgeRunStats:
+    """Re-judge links whose judgment came from a different judge version.
+
+    Opt-in companion to :func:`judge_pending_links`, which only ever picks
+    unjudged links — so bumping :data:`HAIKU_JUDGE_VERSION` after a prompt
+    change would otherwise leave every existing judgment on the old version.
+    A link is stale when the part of ``relevance_judge`` before the first
+    ``/`` differs from ``judge.version``; the model suffix is ignored, so a
+    model swap needs a version bump to count.
+
+    Bounded by ``since`` (``articles.published_at``, required) and by the same
+    daily cap as the pending path, which it shares. Links attempted within
+    :data:`RETRY_AFTER` are skipped. A failed re-judge keeps the old judgment.
+    """
+    return _judge_and_write(
+        judge, "rejudge_stale_links", company_names=company_names, limit=limit,
+        daily_cap=daily_cap, select_sql=_STALE_SQL,
+        params={"version": judge.version, "since": since},
+        mark_failed_sql=_MARK_REJUDGE_FAILED_SQL,
+    )
+
+
+def count_stale_links(
+    judge_version: str, *, tickers: Sequence[str], since: datetime,
+) -> dict[str, int]:
+    """Read-only: stale links per stored ``relevance_judge``, as
+    :func:`rejudge_stale_links` would select them (before the cap)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(_COUNT_STALE_SQL, {
+            "version": judge_version, "tickers": sorted(set(tickers)), "since": since,
+        })
+        return {str(version): int(n) for version, n in cur.fetchall()}
+
+
+def _judge_and_write(
+    judge: RelevanceJudge,
+    caller: str,
+    *,
+    company_names: Mapping[str, str],
+    limit: int | None,
+    daily_cap: int | None,
+    select_sql: str,
+    params: dict[str, Any],
+    mark_failed_sql: str,
+) -> JudgeRunStats:
+    """Select up to the cap with ``select_sql``, judge in chunks, write back."""
+    names = {t: n.strip() for t, n in company_names.items() if t and n and n.strip()}
+    if not names:
+        logger.warning("%s: no company names given — nothing to judge", caller)
+        return JudgeRunStats(0, 0, 0, 0)
+    cap = get_settings().relevance_daily_cap if daily_cap is None else daily_cap
+    params = {**params, "tickers": sorted(names)}
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(_ATTEMPTS_TODAY_SQL)
             remaining = max(cap - int(cur.fetchone()[0]), 0)
             if remaining == 0:
-                logger.warning(
-                    "judge_pending_links: daily cap of %d judge attempts reached", cap,
-                )
+                logger.warning("%s: daily cap of %d judge attempts reached", caller, cap)
                 return JudgeRunStats(0, 0, 0, 0)
             params["limit"] = remaining if limit is None else min(limit, remaining)
-            cur.execute(_PENDING_SQL.format(since_clause=since_clause), params)
+            cur.execute(select_sql, params)
             rows = cur.fetchall()
-
     links = [
         RelevanceLink(
             article_id=int(article_id),
@@ -500,7 +596,7 @@ def judge_pending_links(
         try:
             judgments = judge.judge(chunk)
         except Exception as exc:  # a judge bug must not fail collection
-            logger.warning("judge_pending_links: judge raised: %s", exc)
+            logger.warning("%s: judge raised: %s", caller, exc)
             judgments = []
 
         by_key: dict[tuple[int, str], RelevanceJudgment] = {}
@@ -525,7 +621,7 @@ def judge_pending_links(
                 if ok_rows:
                     cur.executemany(_WRITE_JUDGED_SQL, ok_rows)
                 if failed_rows:
-                    cur.executemany(_MARK_FAILED_SQL, failed_rows)
+                    cur.executemany(mark_failed_sql, failed_rows)
             conn.commit()
 
         judged += len(ok_rows)
@@ -533,8 +629,8 @@ def judge_pending_links(
         if chunk and not ok_rows:
             aborted = True
             logger.warning(
-                "judge_pending_links: every link in a chunk of %d failed — stopping "
-                "this run (%d links left unjudged)", len(chunk), len(links) - i - len(chunk),
+                "%s: every link in a chunk of %d failed — stopping this run "
+                "(%d links left unjudged)", caller, len(chunk), len(links) - i - len(chunk),
             )
             break
 
@@ -548,12 +644,145 @@ def judge_pending_links(
     )
     if attempted and failed / attempted > FAILURE_WARN_RATE:
         logger.warning(
-            "judge_pending_links: %d/%d links failed (%s), e.g. %s",
-            failed, attempted, judge.version, sample_errors,
+            "%s: %d/%d links failed (%s), e.g. %s",
+            caller, failed, attempted, judge.version, sample_errors,
         )
     else:
         logger.info(
-            "judge_pending_links: judged %d, failed %d of %d selected (%s)",
-            judged, failed, len(links), judge.version,
+            "%s: judged %d, failed %d of %d selected (%s)",
+            caller, judged, failed, len(links), judge.version,
         )
     return stats
+
+
+# ---------- drift (read-only) ------------------------------------------------
+
+
+NEAR_HALF = (0.4, 0.6)         # "the judge is unsure" band for the drift check
+
+_DRIFT_SQL = f"""
+    WITH links AS (
+        SELECT ac.article_id,
+               ac.relevance_judged    AS judged,
+               ac.relevance_judge     AS judge,
+               ac.relevance_judged_at AS judged_at,
+               COALESCE(ac.relevance_judged, ac.relevance) AS effective,
+               date_trunc('week', a.published_at)::date    AS week
+        FROM article_companies ac
+        JOIN articles a ON a.id = ac.article_id
+        WHERE a.published_at >= date_trunc('week', now()) - make_interval(weeks => %(weeks)s)
+          {{ticker_clause}}
+    ), by_link AS (
+        SELECT week,
+               count(*)                                          AS n_links,
+               count(judged)                                     AS n_judged,
+               count(*) FILTER (WHERE judged_at IS NOT NULL)     AS n_attempted,
+               count(*) FILTER (WHERE judged_at IS NOT NULL AND judged IS NULL) AS n_failed,
+               percentile_cont(ARRAY[0.1, 0.25, 0.5, 0.75, 0.9])
+                   WITHIN GROUP (ORDER BY judged)                AS p_quantiles,
+               count(*) FILTER (WHERE judged >= {NEAR_HALF[0]} AND judged < {NEAR_HALF[1]})
+                                                                 AS n_near_half,
+               count(*) FILTER (WHERE judged >= %(threshold)s)   AS n_judged_pass,
+               string_agg(DISTINCT judge, ',' ORDER BY judge)    AS judges
+        FROM links
+        GROUP BY week
+    ), by_article AS (
+        SELECT week,
+               count(*)                                          AS n_articles,
+               count(*) FILTER (WHERE max_effective >= %(threshold)s) AS n_articles_pass
+        FROM (SELECT week, article_id, max(effective) AS max_effective
+              FROM links GROUP BY week, article_id) per_article
+        GROUP BY week
+    )
+    SELECT l.week, l.n_links, l.n_judged, l.n_attempted, l.n_failed, l.p_quantiles,
+           l.n_near_half, l.n_judged_pass, a.n_articles, a.n_articles_pass, l.judges
+    FROM by_link l
+    JOIN by_article a USING (week)
+    ORDER BY l.week
+"""
+
+
+@dataclass(frozen=True)
+class WeeklyDrift:
+    """One ISO week (by ``articles.published_at``) of judge health.
+
+    ``failure_rate`` counts links whose latest attempt failed and that are
+    still unjudged, over links attempted at all. ``p_quantiles`` are the
+    10/25/50/75/90th percentiles of ``relevance_judged`` (judged links only).
+    ``article_pass_share`` is the gate's view: articles with at least one link
+    whose *effective* relevance clears the threshold.
+    """
+
+    week: date
+    n_links: int
+    n_judged: int
+    n_attempted: int
+    n_failed: int
+    p_quantiles: tuple[float, ...] | None
+    n_near_half: int
+    n_judged_pass: int
+    n_articles: int
+    n_articles_pass: int
+    judges: tuple[str, ...]
+
+    @property
+    def judged_share(self) -> float | None:
+        return self.n_judged / self.n_links if self.n_links else None
+
+    @property
+    def failure_rate(self) -> float | None:
+        return self.n_failed / self.n_attempted if self.n_attempted else None
+
+    @property
+    def near_half_share(self) -> float | None:
+        return self.n_near_half / self.n_judged if self.n_judged else None
+
+    @property
+    def judged_pass_share(self) -> float | None:
+        return self.n_judged_pass / self.n_judged if self.n_judged else None
+
+    @property
+    def article_pass_share(self) -> float | None:
+        return self.n_articles_pass / self.n_articles if self.n_articles else None
+
+    @property
+    def p_median(self) -> float | None:
+        return self.p_quantiles[2] if self.p_quantiles else None
+
+
+def weekly_drift(
+    *,
+    weeks: int = 8,
+    threshold: float | None = None,
+    tickers: Sequence[str] | None = None,
+) -> list[WeeklyDrift]:
+    """Read-only per-week judge health over the last ``weeks`` full weeks
+    plus the current, partial one (last in the list).
+
+    ``threshold`` defaults to ``RELEVANCE_THRESHOLD``. ``tickers`` restricts
+    the links (pass the covered universe so links written for other tickers
+    don't read as unjudged). Nothing is written.
+    """
+    params: dict[str, Any] = {
+        "weeks": weeks,
+        "threshold": get_settings().relevance_threshold if threshold is None else threshold,
+    }
+    ticker_clause = ""
+    if tickers is not None:
+        ticker_clause = "AND ac.ticker = ANY(%(tickers)s)"
+        params["tickers"] = sorted(set(tickers))
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(_DRIFT_SQL.format(ticker_clause=ticker_clause), params)
+        rows = cur.fetchall()
+    return [
+        WeeklyDrift(
+            week=week, n_links=int(n_links), n_judged=int(n_judged),
+            n_attempted=int(n_attempted), n_failed=int(n_failed),
+            p_quantiles=tuple(float(q) for q in quantiles) if quantiles else None,
+            n_near_half=int(n_near_half), n_judged_pass=int(n_judged_pass),
+            n_articles=int(n_articles), n_articles_pass=int(n_articles_pass),
+            judges=tuple(j for j in (judges or "").split(",") if j),
+        )
+        for (week, n_links, n_judged, n_attempted, n_failed, quantiles, n_near_half,
+             n_judged_pass, n_articles, n_articles_pass, judges) in rows
+    ]

@@ -71,3 +71,60 @@ def test_decide_judge_follows_the_fixed_rule() -> None:
     # jev ran without a price -> cannot decide
     assert ev.decide_judge({"prior": prior, "haiku": haiku,
                             "jev": _arm("jev", 0.9, None)})[0] == "undecided"
+
+
+# ---------- top-up and history -----------------------------------------------
+
+
+def test_labelled_keys_counts_every_row_labelled_or_not() -> None:
+    rows = [{"article_id": "10", "ticker": "AAPL", "label": "relevant"},
+            {"article_id": "11", "ticker": "MSFT", "label": ""},
+            {"article_id": "", "ticker": "", "label": ""}]
+    assert ev.labelled_keys(rows) == {(10, "AAPL"), (11, "MSFT")}
+
+
+def test_balanced_take_round_robins_strata_and_backfills() -> None:
+    rows = ([(i, "T", "1.0") for i in range(5)] + [(10 + i, "T", "0.3") for i in range(5)]
+            + [(20, "T", "0.6")])
+    out = ev.balanced_take(rows, 7)
+    assert [r[2] for r in out] == ["0.3", "0.6", "1.0", "0.3", "1.0", "0.3", "1.0"]
+    # within a stratum the SQL's random order is kept
+    assert [r[0] for r in out if r[2] == "0.3"] == [10, 11, 12]
+    assert len(ev.balanced_take(rows, 50)) == len(rows)
+    assert ev.balanced_take([], 5) == []
+
+
+def test_history_rows_report_both_operating_points(tmp_path) -> None:
+    from datetime import date
+
+    results = {"prior": ev.ArmResult("prior", ev.roc_auc(Y, P), 0.0, 0.0,
+                                     threshold=ev.threshold_for_recall(Y, P))}
+    rows = ev.history_rows(
+        run_date=date(2026, 11, 1), results=results, probs={"prior": P}, y=Y,
+        versions={"prior": "prior"}, prod_threshold=0.8, n_unsure=2, verdict="undecided",
+    )
+    [row] = rows
+    assert set(row) == set(ev.HISTORY_COLUMNS)
+    assert row["run_date"] == "2026-11-01" and row["n_used"] == "6" and row["n_relevant"] == "3"
+    assert row["threshold_r90"] == "0.400" and row["recall_r90"] == "1.0000"
+    # at 0.8 the prior keeps 2 of 3 relevant and no noise
+    assert row["precision_prod"] == "1.0000" and row["recall_prod"] == "0.6667"
+
+    path = tmp_path / "history.csv"
+    ev.append_history(path, rows)
+    ev.append_history(path, rows)
+    back = ev.read_history(path)
+    assert len(back) == 2 and back[0] == row
+    assert path.read_text().count("run_date") == 1  # header written once
+    table = ev.render_history(back)
+    assert table[0].startswith("| run | arm |") and len(table) == 4
+    assert ev.read_history(tmp_path / "missing.csv") == []
+
+
+def test_render_history_keeps_only_the_last_runs() -> None:
+    rows = [{c: "" for c in ev.HISTORY_COLUMNS} | {"run_date": f"2026-{m:02d}-01", "arm": "haiku",
+                                                   "n_used": "50"}
+            for m in range(1, 13)]
+    table = ev.render_history(rows, last=3)
+    assert len(table) == 2 + 3
+    assert "2026-10-01" in table[2] and "2026-12-01" in table[-1]
