@@ -8,7 +8,7 @@ Frozen API surface:
     upsert_article(payload: ArticleRow) -> int
     upsert_articles_bulk(payloads: list[ArticleRow]) -> list[int]
     upsert_classification(article_id: int, payload: ClassificationRow) -> int
-    upsert_article_companies(article_id: int, tickers: list[str]) -> None
+    upsert_article_companies(article_id, tickers, relevance=None) -> None  (additive)
     refresh_sentiment_daily(*, since: date | None = None) -> int
     upsert_briefing(...) -> int
     upsert_document(...) -> int
@@ -154,29 +154,29 @@ def upsert_article_companies(
     tickers: list[str],
     relevance: dict[str, float] | None = None,
 ) -> None:
-    """Replace the (article_id -> ticker) mapping for one article.
+    """Add (article_id -> ticker) links for one article, leaving others alone.
+
+    Additive: links to tickers not in ``tickers`` are kept. Callers sync one
+    ticker at a time, so the old delete-then-insert kept only the last ticker
+    an article was fetched under.
 
     ``relevance`` optionally maps ticker -> 0..1 score for the
     ``article_companies.relevance`` column (how relevant the article is to
-    that ticker). Tickers without an entry keep relevance NULL.
+    that ticker). A ticker without an entry keeps its existing score (NULL
+    for a new link).
     """
+    if not tickers:
+        return
     relevance = relevance or {}
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM article_companies WHERE article_id = %s",
-                (article_id,),
+            cur.executemany(
+                "INSERT INTO article_companies (article_id, ticker, relevance) "
+                "VALUES (%s, %s, %s) "
+                "ON CONFLICT (article_id, ticker) DO UPDATE "
+                "SET relevance = COALESCE(EXCLUDED.relevance, article_companies.relevance)",
+                [(article_id, t, relevance.get(t)) for t in tickers],
             )
-            if tickers:
-                from psycopg2.extras import execute_values
-                execute_values(
-                    cur,
-                    "INSERT INTO article_companies (article_id, ticker, relevance) "
-                    "VALUES %s "
-                    "ON CONFLICT (article_id, ticker) DO UPDATE "
-                    "SET relevance = EXCLUDED.relevance",
-                    [(article_id, t, relevance.get(t)) for t in tickers],
-                )
             conn.commit()
 
 

@@ -19,6 +19,10 @@ class FakeCursor:
     def execute(self, sql_text: str, params: object = None) -> None:
         self.executed.append((sql_text, params))
 
+    def executemany(self, sql_text: str, seq: list[object]) -> None:
+        for params in seq:
+            self.executed.append((sql_text, params))
+
 
 class FakeConnection:
     def __init__(self, rowcount: int) -> None:
@@ -91,3 +95,49 @@ def test_upsert_ticker_alias_normalizes_and_passes_through(monkeypatch) -> None:
     assert "ticker_aliases" in sql_text
     assert "ON CONFLICT (alias) DO UPDATE" in sql_text
     assert params == {"alias": "apple inc.", "ticker": "AAPL", "source": "llm_extraction"}
+
+
+def test_upsert_article_companies_is_additive(monkeypatch) -> None:
+    # Callers sync one ticker at a time; a delete-then-insert kept only the
+    # last ticker an article was fetched under.
+    connection = FakeConnection(rowcount=1)
+
+    @contextmanager
+    def fake_get_connection():
+        yield connection
+
+    monkeypatch.setattr(writes, "get_connection", fake_get_connection)
+
+    writes.upsert_article_companies(42, ["AAPL"], relevance={"AAPL": 1.0})
+    writes.upsert_article_companies(42, ["MSFT"], relevance={"MSFT": 0.3})
+
+    executed = connection.cursor_obj.executed
+    assert not any("DELETE" in sql.upper() for sql, _ in executed)
+    assert [params for _, params in executed] == [(42, "AAPL", 1.0), (42, "MSFT", 0.3)]
+    assert "ON CONFLICT (article_id, ticker) DO UPDATE" in executed[0][0]
+    assert connection.committed is True
+
+
+def test_upsert_article_companies_keeps_existing_score_without_relevance(monkeypatch) -> None:
+    connection = FakeConnection(rowcount=1)
+
+    @contextmanager
+    def fake_get_connection():
+        yield connection
+
+    monkeypatch.setattr(writes, "get_connection", fake_get_connection)
+
+    writes.upsert_article_companies(7, ["NVDA"])
+
+    sql_text, params = connection.cursor_obj.executed[0]
+    assert params == (7, "NVDA", None)
+    assert "COALESCE(EXCLUDED.relevance, article_companies.relevance)" in sql_text
+
+
+def test_upsert_article_companies_empty_tickers_touches_nothing(monkeypatch) -> None:
+    def fail_get_connection():
+        raise AssertionError("no connection expected for an empty ticker list")
+
+    monkeypatch.setattr(writes, "get_connection", fail_get_connection)
+
+    writes.upsert_article_companies(7, [])
