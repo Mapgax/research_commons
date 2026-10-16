@@ -12,7 +12,7 @@ Frozen API surface:
 
     RelevanceLink, RelevanceJudgment, JudgeUsage, JudgeRunStats
     RelevanceJudge                       protocol: .version, .usage, .judge(links)
-    HaikuRelevanceJudge(client=None, *, batch_size=10)
+    HaikuRelevanceJudge(client=None, *, batch_size=1, max_workers=4, system=...)
     JevRelevanceJudge(*, api_key=None, opt_in=None, allow_fallback=None,
                       transport=None, fallback_transport=None, max_workers=8)
     make_relevance_judge(settings=None) -> RelevanceJudge | None
@@ -65,7 +65,7 @@ RELEVANCE_QUESTION = (
     "a different entity."
 )
 
-HAIKU_JUDGE_VERSION = "haiku-v1"
+HAIKU_JUDGE_VERSION = "haiku-v2"   # v2 2026-10-16: one link per call, see the runbook
 JEV_JUDGE_VERSION = "jev-v1"
 
 TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"
@@ -161,69 +161,125 @@ def _failed(link: RelevanceLink, version: str, error: str) -> RelevanceJudgment:
 _HAIKU_SYSTEM = (
     "You judge whether news articles are materially about a given listed company.\n"
     "Each item below is prefixed with an integer id in brackets and holds an "
-    "`article` and a `company`. For each item answer this question:\n"
+    "`article` and a `company`. Judge every item on its own: the other items have "
+    "no bearing on it, and most batches mix relevant and irrelevant items. For each "
+    "item, first note which company or entity its article is mainly about, then "
+    "answer this question for that item's own `company`:\n"
     f"{RELEVANCE_QUESTION}\n"
     "Give the probability that the answer is yes, as a float from 0 to 1.\n"
     'Return ONLY a JSON array with one object per item: {"id": <the integer id, '
-    'copied back exactly>, "p_relevant": <float 0..1>}. No markdown. Every item '
-    "must get exactly one object with its matching id."
+    'copied back exactly>, "ticker": <the item\'s company.ticker, copied back '
+    'exactly>, "p_relevant": <float 0..1>}. No markdown, no code fences and no '
+    "explanation before or after the array. Every item must get exactly one object "
+    "with its matching id."
 )
+
+# Output budget per call. Generous on purpose: Anthropic stops at end_turn, and
+# the Gemini fallback (2.5-flash) spends part of max_output_tokens on thinking,
+# so a tight budget returns empty text there.
+_HAIKU_BASE_TOKENS = 512
+_HAIKU_TOKENS_PER_ITEM = 48
+
+
+def _parse_json_answers(text: str) -> Any:
+    """First JSON array or object in ``text``; ``None`` if there is none.
+
+    Tolerates code fences and prose before or after it — Haiku tends to
+    append an explanation to single-item answers, which the shared client's
+    strict parser rejects.
+    """
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch in "[{":
+            try:
+                value, _ = decoder.raw_decode(text, i)
+            except json.JSONDecodeError:
+                continue
+            return value
+    return None
 
 
 class HaikuRelevanceJudge:
     """Company-aware relevance prompt through the shared :class:`LLMClient`.
 
-    Batches links and matches answers by the echoed id, never by position —
-    the same pattern as Companies_News ``run_llm_enrichment``.
+    One link per call by default, so a link's score cannot depend on the
+    links judged next to it: in batches of 10, haiku-v1 scored clearly
+    relevant items near 0 when their neighbours were irrelevant (ZS "shares
+    tumble 31%": 0.95 alone, 0.02 in its batch). ``batch_size > 1`` still
+    works — answers are matched by the echoed id, never by position, and an
+    echoed ticker that doesn't match the item fails it — but is for
+    experiments. Calls run on ``max_workers`` threads; ``LLMClient`` is
+    thread-safe.
     """
 
     version = HAIKU_JUDGE_VERSION
 
-    def __init__(self, client: LLMClient | None = None, *, batch_size: int = 10) -> None:
+    def __init__(
+        self,
+        client: LLMClient | None = None,
+        *,
+        batch_size: int = 1,
+        max_workers: int = 4,
+        system: str = _HAIKU_SYSTEM,
+    ) -> None:
         if client is None:
             from research_commons.llm import LLMClient
 
             client = LLMClient()
         self._client = client
-        self._batch_size = batch_size
+        self._batch_size = max(batch_size, 1)
+        self._max_workers = max(max_workers, 1)
+        self._system = system
+        self._lock = threading.Lock()
         self.usage = JudgeUsage()
 
     def judge(self, links: Sequence[RelevanceLink]) -> list[RelevanceJudgment]:
-        out: list[RelevanceJudgment] = []
-        for i in range(0, len(links), self._batch_size):
-            out.extend(self._judge_batch(links[i:i + self._batch_size]))
-        return out
+        batches = [links[i:i + self._batch_size]
+                   for i in range(0, len(links), self._batch_size)]
+        if not batches:
+            return []
+        workers = min(self._max_workers, len(batches))
+        if workers == 1:
+            results = [self._judge_batch(b) for b in batches]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                results = list(pool.map(self._judge_batch, batches))
+        return [j for batch in results for j in batch]
 
     def _judge_batch(self, batch: Sequence[RelevanceLink]) -> list[RelevanceJudgment]:
         items = [
             f"[{idx}] {json.dumps(link_state(link), ensure_ascii=False)}"
             for idx, link in enumerate(batch)
         ]
-        self.usage.calls += 1
         try:
             result = self._client.generate(
                 "\n".join(items),
-                system=_HAIKU_SYSTEM,
-                response_format="json",
-                max_output_tokens=64 + 32 * len(batch),
+                system=self._system,
+                response_format="text",
+                max_output_tokens=_HAIKU_BASE_TOKENS + _HAIKU_TOKENS_PER_ITEM * len(batch),
             )
         except Exception as exc:
-            self.usage.failed_calls += 1
+            with self._lock:
+                self.usage.calls += 1
+                self.usage.failed_calls += 1
             logger.warning("Haiku relevance judge: batch of %d failed: %s", len(batch), exc)
             return [_failed(link, self.version, f"llm error: {exc}") for link in batch]
 
-        self.usage.input_tokens += result.input_tokens
-        self.usage.output_tokens += result.output_tokens
-        self.usage.latencies_ms.append(result.latency_ms)
+        with self._lock:
+            self.usage.calls += 1
+            self.usage.input_tokens += result.input_tokens
+            self.usage.output_tokens += result.output_tokens
+            self.usage.latencies_ms.append(result.latency_ms)
         version = f"{self.version}/{result.model_used}"
 
-        answers = result.content
+        raw = result.content if isinstance(result.content, str) else result.raw_text
+        answers = _parse_json_answers(raw or "")
         if isinstance(answers, dict):
             answers = [answers]
         if not isinstance(answers, list):
-            return [_failed(link, version, "response is not a JSON array") for link in batch]
+            return [_failed(link, version, "no JSON array in response") for link in batch]
 
-        by_id: dict[int, float | None] = {}
+        by_id: dict[int, float | str] = {}
         for answer in answers:
             if not isinstance(answer, dict):
                 continue
@@ -232,16 +288,20 @@ class HaikuRelevanceJudge:
                 continue
             if not 0 <= answer_id < len(batch) or answer_id in by_id:
                 continue  # out of range, or a duplicate: keep the first
-            by_id[answer_id] = _valid_probability(answer.get("p_relevant"))
+            echoed = answer.get("ticker")
+            if echoed is not None and str(echoed).strip().upper() != batch[answer_id].ticker.upper():
+                by_id[answer_id] = f"answer echoes ticker {echoed!r}"
+                continue
+            p = _valid_probability(answer.get("p_relevant"))
+            by_id[answer_id] = "p_relevant missing or outside 0..1" if p is None else p
 
         out: list[RelevanceJudgment] = []
         for idx, link in enumerate(batch):
-            if idx not in by_id:
-                out.append(_failed(link, version, "no answer with this id"))
-            elif by_id[idx] is None:
-                out.append(_failed(link, version, "p_relevant missing or outside 0..1"))
+            value = by_id.get(idx, "no answer with this id")
+            if isinstance(value, str):
+                out.append(_failed(link, version, value))
             else:
-                out.append(RelevanceJudgment(link.article_id, link.ticker, by_id[idx], version))
+                out.append(RelevanceJudgment(link.article_id, link.ticker, value, version))
         return out
 
 

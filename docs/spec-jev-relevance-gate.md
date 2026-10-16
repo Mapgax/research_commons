@@ -155,9 +155,12 @@ link has its own state. TypeSafe-only; no OpenRouter fallback unless Phase 0
 explicitly allows it.
 
 **Haiku judge.** Same definition as a prompt via the existing `LLMClient`,
-returning a JSON probability per id, batched like `run_llm_enrichment`'s
-id-echo pattern (match by echoed id, never by position). Uses the current
-Haiku model configured in `LLMClient`.
+returning a JSON probability per id. Uses the current Haiku model configured
+in `LLMClient`. haiku-v1 batched 10 links per call (the `run_llm_enrichment`
+id-echo pattern). haiku-v2 (2026-10-16) judges **one link per call**, on a
+small thread pool. The reason: a batched link's score depended on its
+neighbours for about 7% of links. See the runbook's change log. Batching
+still matches answers by echoed id and ticker, never by position.
 
 **Configuration.** New settings in `research_commons.config`: judge choice
 (`none` | `haiku` | `jev`, default `none`), Jev opt-in flag (default false —

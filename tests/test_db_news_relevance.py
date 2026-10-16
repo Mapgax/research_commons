@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import Any
@@ -416,16 +417,23 @@ def test_jev_rejects_malformed_answers(answer: dict[str, Any]) -> None:
 
 
 class StubClient:
+    """Returns ``content`` as the model's raw text (the judge asks for text and
+    parses it itself). ``content`` may be a callable of the prompt."""
+
     def __init__(self, content: Any = None, exc: Exception | None = None) -> None:
         self.content = content
         self.exc = exc
         self.prompts: list[tuple[str, str]] = []
+        self.kwargs: list[dict[str, Any]] = []
 
-    def generate(self, prompt: str, *, system: str = "", **_: Any) -> LLMResult:
+    def generate(self, prompt: str, *, system: str = "", **kwargs: Any) -> LLMResult:
         self.prompts.append((prompt, system))
+        self.kwargs.append(kwargs)
         if self.exc is not None:
             raise self.exc
-        return LLMResult(self.content, "", "claude-haiku-4-5", "anthropic", 100, 10, 1, 250)
+        content = self.content(prompt) if callable(self.content) else self.content
+        text = content if isinstance(content, str) else json.dumps(content)
+        return LLMResult(text, text, "claude-haiku-4-5", "anthropic", 100, 10, 1, 250)
 
 
 def test_haiku_matches_answers_by_echoed_id() -> None:
@@ -442,7 +450,7 @@ def test_haiku_matches_answers_by_echoed_id() -> None:
 
     assert [j.p_relevant for j in out] == [0.9, None, 0.1]
     assert out[1].error == "no answer with this id"
-    assert out[0].judge_version == "haiku-v1/claude-haiku-4-5"
+    assert out[0].judge_version == f"{relevance.HAIKU_JUDGE_VERSION}/claude-haiku-4-5"
     assert judge.usage.input_tokens == 100 and judge.usage.latencies_ms == [250]
 
 
@@ -452,12 +460,12 @@ def test_haiku_prompt_carries_only_the_allowed_fields() -> None:
 
     prompt, system = client.prompts[0]
     assert prompt.startswith("[0] ")
-    import json
     assert json.loads(prompt[4:]) == {
         "article": {"title": "Apple beats estimates", "body_excerpt": "z" * BODY_EXCERPT_CHARS},
         "company": {"ticker": "AAPL", "name": "Apple Inc."},
     }
     assert relevance.RELEVANCE_QUESTION in system
+    assert client.kwargs[0]["response_format"] == "text"
 
 
 def test_haiku_failure_returns_unjudged() -> None:
@@ -466,17 +474,93 @@ def test_haiku_failure_returns_unjudged() -> None:
     out = judge.judge([_link(1), _link(2)])
 
     assert [j.p_relevant for j in out] == [None, None]
-    assert judge.usage.failed_calls == 1
+    assert judge.usage.failed_calls == 2 and judge.usage.calls == 2
 
 
 def test_haiku_batches_and_resets_ids_per_batch() -> None:
     client = StubClient([{"id": 0, "p_relevant": 0.6}, {"id": 1, "p_relevant": 0.4}])
-    judge = HaikuRelevanceJudge(client, batch_size=2)  # type: ignore[arg-type]
+    judge = HaikuRelevanceJudge(client, batch_size=2, max_workers=1)  # type: ignore[arg-type]
 
     out = judge.judge([_link(1), _link(2), _link(3)])
 
     assert len(client.prompts) == 2
     assert [j.p_relevant for j in out] == [0.6, 0.4, 0.6]
+
+
+# Regression, haiku-v1 (2026-10-16 event study): in batches of 10 a clearly
+# relevant item was scored like its irrelevant neighbours (ZS "shares tumble
+# 31%": 0.95 alone, 0.02 in its batch). The fake model below anchors the same
+# way — every item gets the batch's majority verdict — so a link's score only
+# stays its own if it is judged alone.
+
+
+def _anchoring_model(prompt: str) -> list[dict[str, Any]]:
+    items = [json.loads(line.split("] ", 1)[1]) for line in prompt.splitlines()]
+    own = [0.95 if "Zscaler" in item["article"]["title"] else 0.02 for item in items]
+    majority = sorted(own)[len(own) // 2]
+    return [{"id": i, "ticker": item["company"]["ticker"], "p_relevant": majority}
+            for i, item in enumerate(items)]
+
+
+def _zs_batch() -> list[RelevanceLink]:
+    noise = [RelevanceLink(i, "META", "Meta Platforms", f"Stocks to watch #{i}", "...")
+             for i in range(9)]
+    zs = RelevanceLink(99, "ZS", "Zscaler", "Zscaler shares tumble 31% despite beat", "...")
+    return noise[:8] + [zs] + noise[8:]
+
+
+def test_haiku_score_does_not_depend_on_batch_neighbours() -> None:
+    client = StubClient(_anchoring_model)
+    out = HaikuRelevanceJudge(client).judge(_zs_batch())  # type: ignore[arg-type]
+
+    assert all(prompt.count("\n") == 0 for prompt, _ in client.prompts)  # one link per call
+    assert len(client.prompts) == 10
+    by_ticker = {j.ticker: j.p_relevant for j in out if j.article_id in (0, 99)}
+    assert by_ticker == {"ZS": 0.95, "META": 0.02}
+    # Results keep input order even though calls run concurrently.
+    assert [j.article_id for j in out] == [link.article_id for link in _zs_batch()]
+
+
+def test_haiku_batching_reproduces_the_anchoring_bug() -> None:
+    # Documents why batch_size stays 1: batched, ZS takes its neighbours' score.
+    out = HaikuRelevanceJudge(StubClient(_anchoring_model), batch_size=10).judge(  # type: ignore[arg-type]
+        _zs_batch())
+    assert next(j.p_relevant for j in out if j.ticker == "ZS") == 0.02
+
+
+@pytest.mark.parametrize("text", [
+    '```json\n[{"id": 0, "p_relevant": 0.15}]\n```\n\nThe article is primarily about Meta...',
+    'Here is my answer:\n[{"id": 0, "p_relevant": 0.15}]',
+    '{"id": 0, "p_relevant": 0.15}',
+])
+def test_haiku_parses_answers_wrapped_in_fences_or_prose(text: str) -> None:
+    # haiku-v1 lost ~half of single-item calls: Haiku appended an explanation
+    # after the fenced array and the strict client parser raised.
+    [judgment] = HaikuRelevanceJudge(StubClient(text)).judge([_link()])  # type: ignore[arg-type]
+    assert judgment.p_relevant == pytest.approx(0.15)
+
+
+@pytest.mark.parametrize("text", ["", "I cannot judge this.", "[not json"])
+def test_haiku_unparseable_response_leaves_link_unjudged(text: str) -> None:
+    [judgment] = HaikuRelevanceJudge(StubClient(text)).judge([_link()])  # type: ignore[arg-type]
+    assert judgment.p_relevant is None and judgment.error == "no JSON array in response"
+
+
+def test_haiku_rejects_an_answer_for_the_wrong_ticker() -> None:
+    client = StubClient([{"id": 0, "ticker": "MSFT", "p_relevant": 0.9}])
+    [judgment] = HaikuRelevanceJudge(client).judge([_link()])  # type: ignore[arg-type]
+    assert judgment.p_relevant is None and "MSFT" in (judgment.error or "")
+
+    client = StubClient([{"id": 0, "ticker": "aapl ", "p_relevant": 0.9}])
+    [judgment] = HaikuRelevanceJudge(client).judge([_link()])  # type: ignore[arg-type]
+    assert judgment.p_relevant == 0.9
+
+
+def test_haiku_output_budget_leaves_room_for_the_gemini_fallback() -> None:
+    # 2.5-flash spends max_output_tokens on thinking; v1's 96 returned empty text.
+    client = StubClient([{"id": 0, "p_relevant": 0.5}])
+    HaikuRelevanceJudge(client).judge([_link()])  # type: ignore[arg-type]
+    assert client.kwargs[0]["max_output_tokens"] >= 512
 
 
 # ---------- configuration / reads --------------------------------------------

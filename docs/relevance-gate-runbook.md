@@ -160,6 +160,13 @@ Change the judge when the eval's disagreement list shows a pattern the prompt
 could fix, for example list articles judged relevant, or one name collision
 again and again. Also change it when you want a different model.
 
+Keep `HaikuRelevanceJudge` at one link per call (`batch_size=1`, the
+default since haiku-v2). In batches of 10, about 7% of verdicts depended on
+the neighbouring items, in both directions. Single calls are deterministic at
+temperature 0. If you raise the batch size to save cost (about $0.28 instead
+of $0.55 per 1k links), first re-run the batch-versus-single comparison
+(`eval/relevance/event_study/batch_fix_eval.py`) and show the flips are gone.
+
 1. Edit `_HAIKU_SYSTEM` or `RELEVANCE_QUESTION` in
    `research_commons/db_news/relevance.py`. Then bump
    **`HAIKU_JUDGE_VERSION`** (`haiku-v1` → `haiku-v2`). Bump it for a model-only
@@ -209,3 +216,4 @@ covers everything else.
 | Date | Change | Evidence |
 |---|---|---|
 | 2026-10-15 | Gate live in shadow mode: `RELEVANCE_JUDGE=haiku`, `haiku-v1`, threshold 0.5 (unvalidated) | none yet; the eval has not run |
+| 2026-10-16 | `haiku-v2`: one link per call (was batches of 10); text parsed by the judge, tolerating fences and prose; echoed ticker checked; output budget 512 + 48/item | Event study, 400 severity ≥ 4 links: batch-10 and single verdicts differed on 7.2% (v1) and 7.0% (v2). Single calls repeat exactly. v1 single calls failed about 50% (trailing explanation, then Gemini's empty response); v2 fails 0%. AUC vs price reaction 0.610 → 0.619. Cost about $0.55 per 1k links. |
