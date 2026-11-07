@@ -41,18 +41,25 @@ from the new location or every `import research_commons` breaks.
 
 | Project | Path | Uses this library for |
 |---|---|---|
-| MSARN | `~/Projects/AI/project_MSARN` (**not** under RBZ_Projects) | market DB connection, ticker registry via generated `tickers.csv` |
+| MSARN_RISK_Monitor | `~/Projects/AI/MSARN_RISK_Monitor` (**not** under RBZ_Projects) | market DB connection, ticker registry via generated `tickers.csv`, `scope_policy`, `db_news.reads` |
 | Companies_News | `~/Desktop/RBZ_Projects/Companies_News` | news DB reads/writes, LLM client, source registry |
 | Idee_Scraping | `~/Desktop/RBZ_Projects/Idee_Scraping` | news DB, `resolve_alias` / `upsert_ticker_alias` |
-| risk_monitor | `~/Projects/AI/risk_monitor` | **nothing** — it is a `distribute` target only |
 
-risk_monitor receives `tickers.csv` (it is in `universe_targets.toml`) but does
-**not** depend on this package, so it cannot import `scope_policy` and restates
-the tier rule locally in `scoring.py`, `app.py` and `research/run_markov_wf.py`.
-That is the one accepted exception to the "import, don't restate" rule below;
-adding the dependency for one lookup table has not been judged worth it. Its
-cadence happens to match (daily `active`, Saturday `covered`) — keep the two in
-step by hand.
+MSARN and risk_monitor were merged on 2026-11-07 into one repo,
+`Mapgax/MSARN_RISK_Monitor` (risk_monitor is its `risk_monitor/` package). The old
+`Mapgax/MSARN-pipeline` and `Mapgax/risk_monitor` repos are retired, and one
+`tickers.csv` at the merged repo's root serves both, so there is one distribute
+target instead of two.
+
+The merged repo keeps a **frozen copy** of `scope_policy.py`
+(`data/_scope_policy_fallback.py`), used only where this package can't be
+installed (e.g. a corporate sandbox). Its `tests/test_scope_policy_fallback.py`
+fails when the copy drifts, so after changing `scope_policy.py` here, copy the
+new file over there. The `risk_monitor/` package still doesn't import this
+library and restates the tier rule locally in `scoring.py`, `app.py` and
+`research/run_markov_wf.py`. That is the one accepted exception to the
+"import, don't restate" rule below. Its cadence happens to match (daily
+`active`, Saturday `covered`), so keep the two in step by hand.
 
 Idee_Scraping is **intentionally not** a `distribute` target and has no
 `tickers.csv` — its value is discovering companies outside any fixed list, so

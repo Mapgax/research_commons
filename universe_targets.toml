@@ -11,17 +11,14 @@
 # audience file, independent of the coverage/scope_status tickers.csv above.
 
 [[target]]
-name = "MSARN"
-path = "/Users/andreas/Projects/AI/project_MSARN"
-remote = "Mapgax/MSARN-pipeline"
+# MSARN + risk_monitor merged into one repo on 2026-11-07; one tickers.csv
+# at its root serves both (replaces the MSARN and risk_monitor targets).
+name = "MSARN_RISK_Monitor"
+path = "/Users/andreas/Projects/AI/MSARN_RISK_Monitor"
+remote = "Mapgax/MSARN_RISK_Monitor"
 
 [[target]]
 name = "Companies_News"
 path = "/Users/andreas/Desktop/RBZ_Projects/Companies_News"
 remote = "Mapgax/Companies_News"
 email_focus = true
-
-[[target]]
-name = "risk_monitor"
-path = "/Users/andreas/Projects/AI/risk_monitor"
-remote = "Mapgax/risk_monitor"
