@@ -119,6 +119,10 @@ YAHOO_TICKER_OVERRIDES: dict[str, str] = {
     "ROCKB": "ROCK-B.CO",
     "SCAA": "SCA-A.ST",
     "SCAB": "SCA-B.ST",
+    # Unibail-Rodamco-Westfield: Bloomberg "URW NA Equity" derives URW.AS, which
+    # Yahoo has no data for; the live quote is the Paris line. Confirmed via
+    # yfinance 2026-11-08 (URW.AS and URW empty, URW.PA current).
+    "URW": "URW.PA",
     "VITB": "VIT-B.ST",
 }
 
