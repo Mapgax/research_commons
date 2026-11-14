@@ -18,8 +18,9 @@ Scope tiers, in terms of what they actually gate:
   - ``active``    — everything, and scored on the DAILY cadence.
   - ``inactive``  — everything active gets, but scored only on the weekly
     cadence. Collection, features, alt-data, options and news are identical.
-  - ``watchlist`` — prices and fundamentals only: quant-analysable, but no
-    features, alt-data, options or news. Cheap to hold, instant to promote.
+  - ``watchlist`` — every public, unmetered stage (prices, fundamentals,
+    features, options, EDGAR insider data) but no Google Trends, no news and
+    no scoring. Fully quant-analysable, cheap to hold, instant to promote.
 
 Corrected 2026-08-27: this table used to say ``scoring`` was ``active``-only
 and that inactive was "never scored". MSARN actually scores the whole covered
@@ -45,19 +46,28 @@ ALL_SCOPES: frozenset[str] = frozenset({ACTIVE, INACTIVE, WATCHLIST})
 
 # stage -> the scope_status values that stage runs for.
 STAGE_SCOPES: dict[str, frozenset[str]] = {
-    # Cheap, free (yfinance), and the basis for any quant analysis — so every
-    # tier gets it, including watchlist. Without this a watchlist name is
-    # bootstrapped once and then rots, which is what this table was written to fix.
+    # Public, unmetered sources (Yahoo, SEC EDGAR) and local compute: every
+    # tier gets them, watchlist included, so a staged name is fully
+    # quant-analysable — prices, fundamentals, the engineered feature set,
+    # option metrics and Form 4 insider counts. Widened 2026-11-14 from
+    # prices + fundamentals: the original line was drawn by API budgets, and
+    # none of these stages has one (the extra ~56 names cost ~13% more nightly
+    # runtime and ~0.2 GB of features storage).
     "prices": frozenset({ACTIVE, INACTIVE, WATCHLIST}),
     "fundamentals": frozenset({ACTIVE, INACTIVE, WATCHLIST}),
-    # Covered-only: real per-ticker cost (API budgets, runtime) and only useful
-    # once a name is genuinely researched.
-    "features": frozenset({ACTIVE, INACTIVE}),
+    "features": frozenset({ACTIVE, INACTIVE, WATCHLIST}),
+    "options": frozenset({ACTIVE, INACTIVE, WATCHLIST}),
+    # SEC EDGAR Form 4 on its own (no key, 10 req/s fair-access limit).
+    "insider": frozenset({ACTIVE, INACTIVE, WATCHLIST}),
+    # Covered-only: a real budget. "altdata" is the combined Google Trends +
+    # EDGAR collection; Google Trends is rate-limited hard enough that only
+    # ~120 of ~440 covered names get a value per day already. "news" spends
+    # news-API and LLM budget.
     "altdata": frozenset({ACTIVE, INACTIVE}),
-    "options": frozenset({ACTIVE, INACTIVE}),
     "news": frozenset({ACTIVE, INACTIVE}),
     # Model inference. Every covered name is scored — the weekly SCOPE_FULL
-    # overview rebuild covers active + inactive alike.
+    # overview rebuild covers active + inactive alike. Watchlist has features
+    # but is not on the risk board.
     "scoring": frozenset({ACTIVE, INACTIVE}),
     # The one distinction active/inactive actually carries: the fast daily
     # overview merge (SCOPE_FOCUS), which is what keeps a name's risk numbers

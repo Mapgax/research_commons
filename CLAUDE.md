@@ -205,9 +205,11 @@ Rules that must not be broken:
     on the same cadence as `active`; scored only in the weekly `SCOPE_FULL`
     rebuild (launchd Sundays 01:00), so its risk numbers can be a week old.
     This is the bulk of the universe.
-  - `watchlist` — prices and fundamentals only, on the recurring cadence:
-    quant-analysable for equity research, but no features, alt-data, options or
-    news. Cheap to hold, instant to promote.
+  - `watchlist` — every public, unmetered stage on the recurring cadence:
+    prices, fundamentals, features, options and EDGAR insider data (`insider`).
+    No Google Trends (`altdata`, rate-limited), no news, not scored. Widened
+    2026-11-14 from prices + fundamentals only — that line was set by API
+    budgets, which none of those stages has. Cheap to hold, instant to promote.
   Corrected 2026-08-27: this used to say `inactive` was "never scored", and
   `scope_policy` had `scoring -> {active}`. MSARN's weekly full rebuild scores
   the whole covered universe, so the table now carries two stages — `scoring`

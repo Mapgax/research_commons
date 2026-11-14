@@ -22,19 +22,22 @@ from research_commons.scope_policy import (
 )
 
 
-def test_watchlist_is_quant_ready_but_not_researched() -> None:
-    """The point of the whole module: watchlist gets price history, nothing more."""
-    assert includes("prices", WATCHLIST)
-    assert includes("fundamentals", WATCHLIST)
-    assert not includes("features", WATCHLIST)
-    assert not includes("altdata", WATCHLIST)
-    assert not includes("options", WATCHLIST)
-    assert not includes("news", WATCHLIST)
-    assert not includes("scoring", WATCHLIST)
+def test_watchlist_gets_public_data_but_no_budgeted_stage() -> None:
+    """Watchlist gets everything from public, unmetered sources (2026-11-14),
+    nothing that spends a rate-limited or paid budget, and is not scored."""
+    for stage in ["prices", "fundamentals", "features", "options", "insider"]:
+        assert includes(stage, WATCHLIST), stage
+    for stage in ["altdata", "news", "scoring", "scoring_daily"]:
+        assert not includes(stage, WATCHLIST), stage
+
+
+def test_features_superset_of_scoring() -> None:
+    """Every scored name must have features; the reverse no longer holds."""
+    assert scopes_for("scoring") <= scopes_for("features")
 
 
 def test_inactive_is_covered_and_scored_but_not_daily() -> None:
-    for stage in ["prices", "fundamentals", "features", "altdata", "options", "news", "scoring"]:
+    for stage in ["prices", "fundamentals", "features", "altdata", "insider", "options", "news", "scoring"]:
         assert includes(stage, INACTIVE), stage
     assert not includes("scoring_daily", INACTIVE)
 

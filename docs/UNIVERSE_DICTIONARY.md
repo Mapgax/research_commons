@@ -92,9 +92,11 @@ Read in plain language:
   (launchd Sundays 01:00, and risk_monitor's Saturday `covered` run), so its
   risk numbers can be up to a week old. This is the bulk of the universe (356)
   and is not a dormant tier despite the name.
-- **`watchlist`** — prices and fundamentals only. Quant-analysable for equity
-  research, cheap to hold, instant to promote. No features, no alt-data, no
-  options, no news, no LLM spend. Currently 55 names.
+- **`watchlist`** — everything from public, unmetered sources: prices,
+  fundamentals, features, options and EDGAR Form 4 insider data. No Google
+  Trends (rate-limited), no news, no LLM spend, not scored. Fully
+  quant-analysable, cheap to hold, instant to promote. Currently 56 names.
+  (Widened 2026-11-14 from prices + fundamentals only.)
 
 Corrected 2026-08-27: this table said `scoring` was active-only and that
 inactive was "never scored". Only the *daily* merge is active-only — the
