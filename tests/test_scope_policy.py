@@ -12,6 +12,7 @@ import pytest
 from research_commons.scope_policy import (
     ACTIVE,
     ALL_SCOPES,
+    DELISTED,
     INACTIVE,
     STAGE_SCOPES,
     WATCHLIST,
@@ -84,3 +85,10 @@ def test_normalize_scope_falls_back_to_inactive_not_active() -> None:
 def test_stage_scopes_reference_only_known_tiers() -> None:
     for stage, scopes in STAGE_SCOPES.items():
         assert scopes <= ALL_SCOPES, stage
+
+
+def test_delisted_runs_no_stage() -> None:
+    """A delisted name keeps its row (ISIN memory) but costs nothing anywhere."""
+    assert DELISTED in ALL_SCOPES
+    assert stages_for(DELISTED) == frozenset()
+    assert normalize_scope("  Delisted ") == DELISTED

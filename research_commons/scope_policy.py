@@ -21,6 +21,11 @@ Scope tiers, in terms of what they actually gate:
   - ``watchlist`` — every public, unmetered stage (prices, fundamentals,
     features, options, EDGAR insider data) but no Google Trends, no news and
     no scoring. Fully quant-analysable, cheap to hold, instant to promote.
+  - ``delisted``  — nothing. The row stays in the canonical universe only so
+    its ISIN is still known: a later universe upload that still lists the
+    name merges onto it instead of re-adding it as watchlist, and a focus
+    upload cannot promote it. Added 2026-11-15 for names whose listing is gone
+    (take-privates, mergers) and that Yahoo no longer quotes.
 
 Corrected 2026-08-27: this table used to say ``scoring`` was ``active``-only
 and that inactive was "never scored". MSARN actually scores the whole covered
@@ -41,10 +46,11 @@ from __future__ import annotations
 ACTIVE = "active"
 INACTIVE = "inactive"
 WATCHLIST = "watchlist"
+DELISTED = "delisted"
 
-ALL_SCOPES: frozenset[str] = frozenset({ACTIVE, INACTIVE, WATCHLIST})
+ALL_SCOPES: frozenset[str] = frozenset({ACTIVE, INACTIVE, WATCHLIST, DELISTED})
 
-# stage -> the scope_status values that stage runs for.
+# stage -> the scope_status values that stage runs for. DELISTED is in none.
 STAGE_SCOPES: dict[str, frozenset[str]] = {
     # Public, unmetered sources (Yahoo, SEC EDGAR) and local compute: every
     # tier gets them, watchlist included, so a staged name is fully

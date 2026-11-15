@@ -34,8 +34,10 @@ DUPLICATE_IN_FILE = "duplicate_in_file"
 UNKNOWN_ISIN = "unknown_isin"
 CURRENCY_MISMATCH = "currency_mismatch"
 TICKER_STALE = "ticker_stale"
+DELISTED_IN_FOCUS = "delisted_in_focus"
 
 _QUARANTINE_CATEGORIES = {
+    DELISTED_IN_FOCUS,
     COLLISION,
     SUPERSEDED_ISIN,
     SUSPECT_NON_EQUITY,
@@ -549,8 +551,26 @@ def plan_focus_merge(
                 )
             )
             continue
-        focus_isins.add(update.isin)
         row = result[idx]
+        if row.scope_status == "delisted":
+            # A delisted listing can't be scored; promoting it would put a dead
+            # symbol on the daily board. Absent from focus_isins is harmless —
+            # the demotion pass below only touches active rows.
+            plan.issues.append(
+                Issue(
+                    category=DELISTED_IN_FOCUS,
+                    isin=update.isin,
+                    bloomberg_ticker=update.bloomberg_ticker,
+                    company_name=update.company_name,
+                    detail=f"line {update.source_line}: {row.ticker} is delisted",
+                    suggestion=(
+                        "Drop it from the focus file. If it trades again, set its "
+                        "scope_status in data/ticker_universe.csv by hand first."
+                    ),
+                )
+            )
+            continue
+        focus_isins.add(update.isin)
         if row.scope_status != "active":
             promoted = replace(row, scope_status="active")
             result[idx] = promoted

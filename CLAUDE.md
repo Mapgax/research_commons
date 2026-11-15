@@ -210,6 +210,10 @@ Rules that must not be broken:
     No Google Trends (`altdata`, rate-limited), no news, not scored. Widened
     2026-11-14 from prices + fundamentals only — that line was set by API
     budgets, which none of those stages has. Cheap to hold, instant to promote.
+  - `delisted` — no stage at all (added 2026-11-15). The row is kept only as
+    ISIN memory, so a universe upload can't re-add the name as watchlist and a
+    focus upload can't promote it (quarantined as `delisted_in_focus`). Use it
+    for take-privates/mergers Yahoo no longer quotes; record why in `notes`.
   Corrected 2026-08-27: this used to say `inactive` was "never scored", and
   `scope_policy` had `scoring -> {active}`. MSARN's weekly full rebuild scores
   the whole covered universe, so the table now carries two stages — `scoring`

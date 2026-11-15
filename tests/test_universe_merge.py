@@ -14,6 +14,7 @@ from research_commons.universe.io import IgnoreEntry, UniverseRow, UpdateRow
 from research_commons.universe.merge import (
     COLLISION,
     CURRENCY_MISMATCH,
+    DELISTED_IN_FOCUS,
     DUPLICATE_IN_FILE,
     INVALID_ISIN,
     MISSING_FIELDS,
@@ -386,3 +387,18 @@ def test_focus_never_touches_universe_membership() -> None:
     plan = plan_focus_merge(canonical, [upd("A", "US0378331005", "AAA US Equity")], [])
     assert len(plan.result) == len(canonical)
     assert plan.result[0].scope_status == "active"
+
+
+def test_focus_never_promotes_delisted() -> None:
+    canonical = [
+        canon("AAA", "US0378331005", "AAA US Equity", status="active"),
+        canon("DDD", "US5949181045", "DDD US Equity", status="delisted"),
+    ]
+    plan = plan_focus_merge(
+        canonical,
+        [upd("A Corp", "US0378331005", "AAA US Equity"), upd("D Corp", "US5949181045", "DDD US Equity")],
+        [],
+    )
+    assert [i.category for i in plan.quarantined] == [DELISTED_IN_FOCUS]
+    assert not plan.promotions
+    assert {r.ticker: r.scope_status for r in plan.result} == {"AAA": "active", "DDD": "delisted"}

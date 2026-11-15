@@ -59,7 +59,7 @@ axes into one dial lost information the email pipeline needed.
 | `sector_name` | GICS-style sector | Used for grouping in dashboards and features. |
 | `currency` | ISO 4217 **trading** currency | Never auto-refreshed from uploads. Upload files carry `DenCurrency`, a *denomination* currency that is frequently wrong about where the line actually trades (EUR for LSE names, USD for Hong Kong lines). Mismatches are reported, not applied. |
 | `yahoo_symbol` | Authoritative Yahoo Finance symbol | Overrides the Bloomberg-derived guess. Getting this wrong is the single most common cause of a ticker silently collecting nothing. |
-| `scope_status` | **The coverage dial.** `active` / `inactive` / `watchlist` | See the next section — this is the field with real consequences. |
+| `scope_status` | **The coverage dial.** `active` / `inactive` / `watchlist` / `delisted` | See the next section — this is the field with real consequences. |
 | `added_date` | When the row entered the universe | |
 | `superseded_isins` | Prior ISINs after a corporate action | Keeps history attached across an ISIN change. |
 | `notes` | Free text | Where the "why" of an unusual row lives. Read it before acting on a surprising row. |
@@ -71,16 +71,17 @@ The tier → stage mapping is defined in exactly one place:
 Import `scopes_for(stage)` / `includes(stage, scope_status)`; never restate the
 sets locally.
 
-| stage | `active` | `inactive` | `watchlist` |
-|---|:--:|:--:|:--:|
-| `prices` | ✅ | ✅ | ✅ |
-| `fundamentals` | ✅ | ✅ | ✅ |
-| `features` | ✅ | ✅ | — |
-| `altdata` (Google Trends, EDGAR) | ✅ | ✅ | — |
-| `options` | ✅ | ✅ | — |
-| `news` (+ LLM classification) | ✅ | ✅ | — |
-| `scoring` (model inference, weekly `SCOPE_FULL` rebuild) | ✅ | ✅ | — |
-| `scoring_daily` (the fast `SCOPE_FOCUS` overview merge) | ✅ | — | — |
+| stage | `active` | `inactive` | `watchlist` | `delisted` |
+|---|:--:|:--:|:--:|:--:|
+| `prices` | ✅ | ✅ | ✅ | — |
+| `fundamentals` | ✅ | ✅ | ✅ | — |
+| `features` | ✅ | ✅ | ✅ | — |
+| `options` | ✅ | ✅ | ✅ | — |
+| `insider` (EDGAR Form 4 alone) | ✅ | ✅ | ✅ | — |
+| `altdata` (Google Trends + EDGAR) | ✅ | ✅ | — | — |
+| `news` (+ LLM classification) | ✅ | ✅ | — | — |
+| `scoring` (model inference, weekly `SCOPE_FULL` rebuild) | ✅ | ✅ | — | — |
+| `scoring_daily` (the fast `SCOPE_FOCUS` overview merge) | ✅ | — | — | — |
 
 Read in plain language:
 
@@ -97,12 +98,18 @@ Read in plain language:
   Trends (rate-limited), no news, no LLM spend, not scored. Fully
   quant-analysable, cheap to hold, instant to promote. Currently 56 names.
   (Widened 2026-11-14 from prices + fundamentals only.)
+- **`delisted`** — nothing at all. The listing is gone (take-private, merger)
+  and Yahoo no longer quotes it. The row stays only so its ISIN is still known:
+  a universe upload that still lists the name merges onto this row instead of
+  re-adding it as watchlist, and a focus upload that lists it is quarantined
+  (`delisted_in_focus`) rather than promoted. The `notes` column records the
+  reason. If a name trades again, set its status by hand. Added 2026-11-15.
 
 Corrected 2026-08-27: this table said `scoring` was active-only and that
 inactive was "never scored". Only the *daily* merge is active-only — the
 active/inactive line is a scoring cadence, not scoring at all.
 
-Counts as of 2026-08-27: **85 active / 356 inactive / 55 watchlist**.
+Counts as of 2026-11-15: **85 active / 347 inactive / 56 watchlist / 9 delisted**.
 
 ### Promotion and demotion
 
@@ -160,6 +167,13 @@ columns on `ticker_universe.csv` (values archived in
 `data/archive/retired_scope_flags_20260729.csv`) and reinstated the same day as
 the standalone `email_focus_tickers.csv`, after the retirement turned out to
 remove audience targeting the email pipeline still needed.
+
+**2026-11-15** — New `delisted` tier (no stage). Nine names Yahoo no longer
+quotes moved `inactive` → `delisted`: NXU, EA, LBRDK, DPH, 11.HK, FNOX, ANSS,
+HES, SPLK. Three of them (NXU, EA, LBRDK) were still on the risk board with
+stale or empty numbers. Same day: `yahoo_symbol` fixed for 5930.KS
+(`005930` → `005930.KS`) and EPIB (`EPIB.ST` → `EPI-B.ST`), both of which had
+never collected a price. Migration `0006` widens the `ticker_metadata` CHECK.
 
 **2026-08-22** — 300 names moved `watchlist` → `inactive` (commit `6327514`),
 tripling the covered universe from 188 to 488. 194 of them arrived carrying
