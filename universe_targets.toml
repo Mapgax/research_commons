@@ -6,6 +6,11 @@
 # this guards against writing into a stale clone after a repo moves on disk
 # (the MSARN checkout has moved once already).
 #
+# Paths are the Windows checkouts on the R&Co sandbox machine since
+# 2026-11-16, when the scheduled jobs moved off the Mac. Forward slashes keep
+# the TOML strings free of escapes. Running the tool from the Mac again means
+# switching these back (Mac paths are in git history before that date).
+#
 # `email_focus = true` additionally distributes data/email_focus_tickers.csv
 # to that target on `update-email-focus --apply` — the PM/advisory email
 # audience file, independent of the coverage/scope_status tickers.csv above.
@@ -14,11 +19,11 @@
 # MSARN + risk_monitor merged into one repo on 2026-11-07; one tickers.csv
 # at its root serves both (replaces the MSARN and risk_monitor targets).
 name = "MSARN_RISK_Monitor"
-path = "/Users/andreas/Projects/AI/MSARN_RISK_Monitor"
+path = "C:/Users/AndreasDoepfert/AI_Projects/MSARN_RISK_Monitor"
 remote = "Mapgax/MSARN_RISK_Monitor"
 
 [[target]]
 name = "Companies_News"
-path = "/Users/andreas/Desktop/RBZ_Projects/Companies_News"
+path = "C:/Users/AndreasDoepfert/AI_Projects/Companies_News"
 remote = "Mapgax/Companies_News"
 email_focus = true
